@@ -15,6 +15,21 @@
 
 ## 安装
 
+### CLIProxyAPI 插件商店
+
+官方插件商店收录后，可在 CPA Manager Plus / CLIProxyAPI 插件商店中选择
+`cursor` 安装。商店会从最新的 `v<version>` GitHub Release 下载当前平台 ZIP，
+并用同一 Release 中的 `checksums.txt` 校验文件。
+
+当前商店发布物仅支持 Linux amd64：
+
+```text
+cursor_0.4.0_linux_amd64.zip
+checksums.txt
+```
+
+### 手动安装
+
 解压发布包，然后把 `--plugins-dir` 指向 CLIProxyAPI 配置中的 `plugins.dir`：
 
 ```sh

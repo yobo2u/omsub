@@ -4,12 +4,14 @@ on:
   push:
     branches:
       - cursor
+    tags:
+      - "v*.*.*"
     paths:
       - ".github/workflows/cursor-plugin-build.yml"
       - "cursor-plugin/**"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   linux-amd64:
@@ -33,10 +35,36 @@ jobs:
           GOARCH: amd64
           GOOS: linux
         run: go build -trimpath -buildmode=c-shared -o cursor.so .
-      - name: Package
-        run: ./packaging/build-release.sh 0.4.0
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          version="0.4.0"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Package standalone installer
+        run: ./packaging/build-release.sh "${{ steps.version.outputs.version }}"
+      - name: Package plugin store asset
+        run: ./packaging/build-store-release.sh "${{ steps.version.outputs.version }}"
       - uses: actions/upload-artifact@v4
         with:
-          name: cursor-plugin-0.4.0-linux-amd64
-          path: cursor-plugin/release/cursor-plugin-0.4.0-linux-amd64.tar.gz
+          name: cursor-plugin-${{ steps.version.outputs.version }}-linux-amd64
+          path: |
+            cursor-plugin/release/cursor-plugin-${{ steps.version.outputs.version }}-linux-amd64.tar.gz
+            cursor-plugin/release/cursor_${{ steps.version.outputs.version }}_linux_amd64.zip
+            cursor-plugin/release/checksums.txt
           if-no-files-found: error
+      - name: Publish plugin store release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          "release/cursor_${{ steps.version.outputs.version }}_linux_amd64.zip"
+          "release/checksums.txt"
+          "release/cursor-plugin-${{ steps.version.outputs.version }}-linux-amd64.tar.gz"
+          --repo "$GITHUB_REPOSITORY"
+          --title "Cursor plugin $GITHUB_REF_NAME"
+          --notes "Unofficial community plugin for user-authorized Cursor accounts. Review DISCLAIMER.md before installation. The cursor_${GITHUB_REF_NAME#v}_linux_amd64.zip asset and checksums.txt follow the CLIProxyAPI official plugin-store format; the tar.gz asset remains available for manual installation."

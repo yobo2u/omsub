@@ -104,7 +104,7 @@ func registration() map[string]any {
 			"Name":             "cursor",
 			"Version":          "0.4.0",
 			"Author":           "yobo",
-			"GitHubRepository": "https://github.com/yobo2u/omsub/tree/cursor/cursor-plugin",
+			"GitHubRepository": "https://github.com/yobo2u/omsub",
 			"Logo":             "",
 			"ConfigFields":     []string{},
 		},
