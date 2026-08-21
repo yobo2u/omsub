@@ -1,0 +1,144 @@
+package plugin
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"time"
+	"unicode/utf8"
+
+	"cursorplugin/internal/cursorapi"
+	"cursorplugin/internal/cursorauth"
+	"cursorplugin/internal/cursorproto"
+	"cursorplugin/internal/openai"
+)
+
+func (handler *Handler) execute(ctx context.Context, raw []byte) (any, error) {
+	request, chat, credentials, err := decodeExecution(raw)
+	if err != nil {
+		return nil, err
+	}
+	if handler.cursor == nil {
+		return nil, errors.New("Cursor client is unavailable")
+	}
+	turn := openai.NewTurn("cursor/" + chat.Model)
+	err = handler.cursor.Run(ctx, cursorapi.RunInput{
+		AccessToken: credentials.AccessToken,
+		Model:       chat.Model,
+		System:      chat.System,
+		Prompt:      chat.Prompt,
+	}, func(event cursorproto.ServerEvent) error {
+		if event.Kind == cursorproto.EventText {
+			turn.AddText(event.Text)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	payload, err := turn.Completion(chat.Prompt)
+	if err != nil {
+		return nil, err
+	}
+	_ = request
+	return executorResponse{Payload: payload, Headers: http.Header{"content-type": []string{"application/json"}}}, nil
+}
+
+func (handler *Handler) executeStream(ctx context.Context, raw []byte) (any, error) {
+	request, chat, credentials, err := decodeExecution(raw)
+	if err != nil {
+		return nil, err
+	}
+	if handler.cursor == nil || handler.emitter == nil || request.StreamID == "" {
+		return nil, errors.New("Cursor stream bridge is unavailable")
+	}
+	go handler.runStream(ctx, request.StreamID, chat, credentials)
+	return struct {
+		Headers http.Header `json:"headers"`
+	}{Headers: http.Header{"content-type": []string{"text/event-stream"}}}, nil
+}
+
+func (handler *Handler) runStream(parent context.Context, streamID string, chat openai.ChatRequest, credentials cursorauth.Credentials) {
+	ctx, cancel := context.WithTimeout(parent, 15*time.Minute)
+	defer cancel()
+	turn := openai.NewTurn("cursor/" + chat.Model)
+	done := false
+	runErr := handler.cursor.Run(ctx, cursorapi.RunInput{
+		AccessToken: credentials.AccessToken,
+		Model:       chat.Model,
+		System:      chat.System,
+		Prompt:      chat.Prompt,
+	}, func(event cursorproto.ServerEvent) error {
+		switch event.Kind {
+		case cursorproto.EventText:
+			chunk, err := turn.StreamChunk(event.Text)
+			if err != nil {
+				return err
+			}
+			return handler.emitter.Emit(ctx, streamID, chunk)
+		case cursorproto.EventDone:
+			done = true
+			chunk, err := turn.FinalChunk(chat.Prompt)
+			if err != nil {
+				return err
+			}
+			if err := handler.emitter.Emit(ctx, streamID, chunk); err != nil {
+				return err
+			}
+			return handler.emitter.Emit(ctx, streamID, []byte("[DONE]"))
+		case cursorproto.EventIgnored, cursorproto.EventThinking, cursorproto.EventTokens:
+			return nil
+		default:
+			return nil
+		}
+	})
+	if runErr == nil && !done {
+		runErr = errors.New("Cursor stream completed without turn end")
+	}
+	if closeErr := handler.emitter.Close(streamID, runErr); closeErr != nil {
+		return
+	}
+}
+
+func decodeExecution(raw []byte) (executorRequest, openai.ChatRequest, cursorauth.Credentials, error) {
+	var request executorRequest
+	if err := json.Unmarshal(raw, &request); err != nil {
+		return executorRequest{}, openai.ChatRequest{}, cursorauth.Credentials{}, fmt.Errorf("decode executor request: %w", err)
+	}
+	payload := request.Payload
+	if len(payload) == 0 {
+		payload = request.OriginalRequest
+	}
+	chat, err := openai.ParseChatRequest(payload)
+	if err != nil {
+		return executorRequest{}, openai.ChatRequest{}, cursorauth.Credentials{}, err
+	}
+	credentials, err := cursorauth.ParseCredentials(request.StorageJSON)
+	if err != nil {
+		return executorRequest{}, openai.ChatRequest{}, cursorauth.Credentials{}, err
+	}
+	return request, chat, credentials, nil
+}
+
+func countTokens(raw []byte) (any, error) {
+	var request executorRequest
+	if err := json.Unmarshal(raw, &request); err != nil {
+		return nil, fmt.Errorf("decode token request: %w", err)
+	}
+	payload := request.Payload
+	if len(payload) == 0 {
+		payload = request.OriginalRequest
+	}
+	chat, err := openai.ParseChatRequest(payload)
+	if err != nil {
+		return nil, err
+	}
+	tokens := max(1, utf8.RuneCountInString(chat.System+chat.Prompt)/4)
+	encoded, err := json.Marshal(map[string]int{"total_tokens": tokens})
+	if err != nil {
+		return nil, fmt.Errorf("encode token count: %w", err)
+	}
+	return executorResponse{Payload: encoded, Headers: http.Header{"content-type": []string{"application/json"}}}, nil
+}

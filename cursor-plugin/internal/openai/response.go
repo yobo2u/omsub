@@ -1,0 +1,127 @@
+package openai
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"time"
+	"unicode/utf8"
+)
+
+type Turn struct {
+	id      string
+	model   string
+	created int64
+	text    string
+}
+
+type Usage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+type chatCompletion struct {
+	ID      string             `json:"id"`
+	Object  string             `json:"object"`
+	Created int64              `json:"created"`
+	Model   string             `json:"model"`
+	Choices []completionChoice `json:"choices"`
+	Usage   Usage              `json:"usage"`
+}
+
+type completionChoice struct {
+	Index        int               `json:"index"`
+	Message      *assistantMessage `json:"message,omitempty"`
+	Delta        *assistantMessage `json:"delta,omitempty"`
+	FinishReason *string           `json:"finish_reason"`
+}
+
+type assistantMessage struct {
+	Role    string `json:"role,omitempty"`
+	Content string `json:"content,omitempty"`
+}
+
+func NewTurn(model string) *Turn {
+	return &Turn{id: "chatcmpl-" + randomHex(12), model: model, created: time.Now().Unix()}
+}
+
+func (turn *Turn) StreamChunk(text string) ([]byte, error) {
+	turn.text += text
+	payload := chatCompletion{
+		ID:      turn.id,
+		Object:  "chat.completion.chunk",
+		Created: turn.created,
+		Model:   turn.model,
+		Choices: []completionChoice{{
+			Index: 0,
+			Delta: &assistantMessage{Role: "assistant", Content: text},
+		}},
+	}
+	return marshalStreamPayload(payload)
+}
+
+func (turn *Turn) FinalChunk(prompt string) ([]byte, error) {
+	finish := "stop"
+	payload := chatCompletion{
+		ID:      turn.id,
+		Object:  "chat.completion.chunk",
+		Created: turn.created,
+		Model:   turn.model,
+		Choices: []completionChoice{{Index: 0, Delta: &assistantMessage{}, FinishReason: &finish}},
+		Usage:   estimatedUsage(prompt, turn.text),
+	}
+	return marshalStreamPayload(payload)
+}
+
+func (turn *Turn) Completion(prompt string) ([]byte, error) {
+	finish := "stop"
+	payload := chatCompletion{
+		ID:      turn.id,
+		Object:  "chat.completion",
+		Created: turn.created,
+		Model:   turn.model,
+		Choices: []completionChoice{{
+			Index:        0,
+			Message:      &assistantMessage{Role: "assistant", Content: turn.text},
+			FinishReason: &finish,
+		}},
+		Usage: estimatedUsage(prompt, turn.text),
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("encode OpenAI completion: %w", err)
+	}
+	return raw, nil
+}
+
+func (turn *Turn) AddText(text string) {
+	turn.text += text
+}
+
+func marshalStreamPayload(payload chatCompletion) ([]byte, error) {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("encode OpenAI stream chunk: %w", err)
+	}
+	return raw, nil
+}
+
+func estimatedUsage(prompt, completion string) Usage {
+	promptTokens := max(1, utf8.RuneCountInString(prompt)/4)
+	completionTokens := max(1, utf8.RuneCountInString(completion)/4)
+	return Usage{
+		PromptTokens:     promptTokens,
+		CompletionTokens: completionTokens,
+		TotalTokens:      promptTokens + completionTokens,
+	}
+}
+
+func randomHex(bytesCount int) string {
+	buffer := make([]byte, bytesCount)
+	if _, err := rand.Read(buffer); err != nil {
+		return "cursor"
+	}
+	return hex.EncodeToString(buffer)
+}

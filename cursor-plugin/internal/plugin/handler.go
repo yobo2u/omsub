@@ -1,0 +1,117 @@
+package plugin
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+
+	"cursorplugin/internal/cursorapi"
+	"cursorplugin/internal/cursorauth"
+	"cursorplugin/internal/openai"
+)
+
+type Handler struct {
+	auth    *cursorauth.Service
+	cursor  CursorClient
+	emitter StreamEmitter
+}
+
+func NewHandler(dependencies Dependencies) *Handler {
+	if dependencies.Auth == nil {
+		dependencies.Auth = cursorauth.NewService(http.DefaultClient, cursorauth.DefaultEndpoints())
+	}
+	if dependencies.Cursor == nil {
+		client, err := cursorapi.NewClient(cursorapi.Config{BaseURL: "https://api2.cursor.sh"})
+		if err == nil {
+			dependencies.Cursor = client
+		}
+	}
+	return &Handler{auth: dependencies.Auth, cursor: dependencies.Cursor, emitter: dependencies.Emitter}
+}
+
+func (handler *Handler) Call(ctx context.Context, method string, request []byte) []byte {
+	raw, _ := handler.CallWithStatus(ctx, method, request)
+	return raw
+}
+
+func (handler *Handler) CallWithStatus(ctx context.Context, method string, request []byte) ([]byte, bool) {
+	result, err := handler.dispatch(ctx, method, request)
+	if err != nil {
+		httpStatus := 0
+		if errors.Is(err, openai.ErrInvalidRequest) {
+			httpStatus = http.StatusBadRequest
+		}
+		return marshalEnvelope(envelope{OK: false, Error: &envelopeError{
+			Code:       "cursor_plugin_error",
+			Message:    err.Error(),
+			HTTPStatus: httpStatus,
+		}}), false
+	}
+	raw, err := json.Marshal(result)
+	if err != nil {
+		return marshalEnvelope(envelope{OK: false, Error: &envelopeError{Code: "cursor_plugin_error", Message: "encode plugin result"}}), false
+	}
+	return marshalEnvelope(envelope{OK: true, Result: raw}), true
+}
+
+func (handler *Handler) dispatch(ctx context.Context, method string, request []byte) (any, error) {
+	switch method {
+	case "plugin.register", "plugin.reconfigure":
+		return registration(), nil
+	case "auth.identifier", "executor.identifier":
+		return map[string]string{"identifier": "cursor"}, nil
+	case "auth.parse":
+		return handler.parseAuth(request)
+	case "auth.login.start":
+		return handler.startLogin(ctx)
+	case "auth.login.poll":
+		return handler.pollLogin(ctx, request)
+	case "auth.refresh":
+		return handler.refreshAuth(ctx, request)
+	case "model.static":
+		return modelResponse([]string{"auto"}), nil
+	case "model.for_auth":
+		return handler.modelsForAuth(ctx, request)
+	case "executor.execute":
+		return handler.execute(ctx, request)
+	case "executor.execute_stream":
+		return handler.executeStream(ctx, request)
+	case "executor.count_tokens":
+		return countTokens(request)
+	case "executor.http_request":
+		return nil, errors.New("Cursor plugin HTTP passthrough is unsupported")
+	default:
+		return nil, errors.New("unknown plugin method")
+	}
+}
+
+func registration() map[string]any {
+	return map[string]any{
+		"schema_version": 3,
+		"metadata": map[string]any{
+			"Name":             "cursor",
+			"Version":          "0.1.0",
+			"Author":           "yobo",
+			"GitHubRepository": "https://github.com/yobo2u/omsub/tree/cursor/cursor-plugin",
+			"Logo":             "",
+			"ConfigFields":     []string{},
+		},
+		"capabilities": map[string]any{
+			"auth_provider":           true,
+			"model_provider":          true,
+			"executor":                true,
+			"executor_model_scope":    "oauth",
+			"executor_input_formats":  []string{"chat-completions"},
+			"executor_output_formats": []string{"chat-completions"},
+		},
+	}
+}
+
+func marshalEnvelope(response envelope) []byte {
+	raw, err := json.Marshal(response)
+	if err != nil {
+		return []byte(`{"ok":false,"error":{"code":"cursor_plugin_error","message":"encode envelope"}}`)
+	}
+	return raw
+}
