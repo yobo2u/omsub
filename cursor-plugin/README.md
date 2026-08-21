@@ -18,8 +18,8 @@
 解压发布包，然后把 `--plugins-dir` 指向 CLIProxyAPI 配置中的 `plugins.dir`：
 
 ```sh
-tar -xzf cursor-plugin-0.2.0-linux-amd64.tar.gz
-cd cursor-plugin-0.2.0-linux-amd64
+tar -xzf cursor-plugin-0.3.0-linux-amd64.tar.gz
+cd cursor-plugin-0.3.0-linux-amd64
 sudo ./install.sh --plugins-dir /opt/cpa-manager-plus/cliproxyapi/plugins
 ```
 
@@ -45,6 +45,8 @@ plugins:
 - 每个账户的模型禁用选择器；
 - 插件进程启动后的本地估算 Token 与请求计数；
 - 明确的订阅额度不可用状态。
+
+管理页完整支持中文和英文。首次打开时优先使用已保存的语言偏好，否则跟随浏览器语言，非中文环境默认英文；页面右上角可随时切换“中文 / English”。切换会同步更新静态文案、账户状态、用量指标、模型控制、操作提示、页面标题及无障碍语言标记。插件只保存语言偏好，管理密钥仍仅保留在当前页面内存中。
 
 模型禁用规则保存在对应 Cursor OAuth 认证 JSON 的 `disabled_models` 字段中。插件会同时在模型发现和请求执行阶段应用规则，刷新 OAuth token 时也会保留规则。
 

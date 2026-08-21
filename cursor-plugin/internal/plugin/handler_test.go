@@ -29,7 +29,7 @@ func Test_Handler_Register_declares_cursor_auth_models_and_executor(t *testing.T
 	require.Contains(t, string(response.Result), `"executor":true`)
 	require.Contains(t, string(response.Result), `"management_api":true`)
 	require.Contains(t, string(response.Result), `"usage_plugin":true`)
-	require.Contains(t, string(response.Result), `"Version":"0.2.0"`)
+	require.Contains(t, string(response.Result), `"Version":"0.3.0"`)
 	require.Contains(t, string(response.Result), `"GitHubRepository":"https://github.com/yobo2u/omsub/tree/cursor/cursor-plugin"`)
 }
 
@@ -42,6 +42,8 @@ func Test_Handler_ManagementRegister_exposes_cursor_management_resource_and_auth
 	require.NoError(t, json.Unmarshal(raw, &response))
 	require.True(t, response.OK)
 	require.Contains(t, string(response.Result), `"Path":"/status"`)
+	require.Contains(t, string(response.Result), `"Menu":"Cursor"`)
+	require.Contains(t, string(response.Result), `Cursor status, usage and model controls / Cursor 状态、用量与模型管理。`)
 	require.Contains(t, string(response.Result), `"Path":"/plugins/cursor/status"`)
 	require.Contains(t, string(response.Result), `"Path":"/plugins/cursor/disabled-models"`)
 }

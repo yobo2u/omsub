@@ -49,8 +49,8 @@ func managementRegistration() managementRegistrationResponse {
 		},
 		Resources: []managementResource{{
 			Path:        "/status",
-			Menu:        "Cursor 管理",
-			Description: "查看 Cursor 状态、本地估算用量并管理禁用模型。",
+			Menu:        "Cursor",
+			Description: "Cursor status, usage and model controls / Cursor 状态、用量与模型管理。",
 		}},
 	}
 }

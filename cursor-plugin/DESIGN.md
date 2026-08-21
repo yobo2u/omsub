@@ -32,6 +32,7 @@ Preserve the compact, neutral system-tool character of CLIProxyAPI's own plugin 
 - `Metric`: label and monospace value.
 - `ModelOption`: checked, unchecked, keyboard-focus, disabled states.
 - `Notice`: information, success, and error states with `role=status` or `role=alert`.
+- `LanguageSelect`: native select with Chinese and English options, keyboard focus, and persisted preference.
 
 ## 6. Interaction
 
@@ -39,6 +40,8 @@ Preserve the compact, neutral system-tool character of CLIProxyAPI's own plugin 
 - “加载状态” fetches the authenticated plugin status endpoint.
 - “保存模型禁用” submits only the selected account and model IDs.
 - Buttons expose loading and disabled states; completion is announced to assistive technology.
+- The initial language follows a previously saved preference, then the browser language, with English as the fallback.
+- Changing language immediately updates static copy, dynamic account cards, notices, the document title, and the document language. Only the language preference is persisted.
 - No decorative animation. Reduced-motion users receive the same instantaneous state changes.
 
 ## 7. Accessibility
@@ -46,7 +49,9 @@ Preserve the compact, neutral system-tool character of CLIProxyAPI's own plugin 
 - Semantic headings, labels, fieldsets, legends, and buttons.
 - Visible keyboard focus and minimum 44 px interactive height.
 - Status is not conveyed by color alone.
+- The language selector uses a native labelled control, and `<html lang>` always matches the displayed language.
 - Chinese copy uses natural line breaks; model IDs may break only at safe punctuation.
+- English copy uses concise operational language and remains readable without horizontal scrolling.
 
 ## 8. Accepted debt
 

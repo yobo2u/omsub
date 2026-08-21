@@ -84,7 +84,8 @@ func Test_Handler_ManagementStatus_includes_plugin_local_estimated_usage(t *test
 	require.Contains(t, string(response.Body), `"total_tokens":20`)
 }
 
-func Test_Handler_ManagementResource_serves_static_shell_without_exposing_auth_data(t *testing.T) {
+func Test_Handler_ManagementResource_serves_bilingual_shell_without_exposing_auth_data(t *testing.T) {
+	// Given
 	handler := NewHandler(Dependencies{})
 	rawRequest, err := json.Marshal(managementRequest{
 		Method: "GET",
@@ -92,14 +93,20 @@ func Test_Handler_ManagementResource_serves_static_shell_without_exposing_auth_d
 	})
 	require.NoError(t, err)
 
+	// When
 	result, err := handler.handleManagement(context.Background(), rawRequest)
 
+	// Then
 	require.NoError(t, err)
 	response := result.(managementResponse)
 	require.Equal(t, 200, response.StatusCode)
 	require.Equal(t, "text/html; charset=utf-8", response.Headers.Get("content-type"))
 	require.Contains(t, string(response.Body), "Cursor 管理")
-	require.Contains(t, string(response.Body), "加载状态")
+	require.Contains(t, string(response.Body), "Cursor Management")
+	require.Contains(t, string(response.Body), `<select id="language"`)
+	require.Contains(t, string(response.Body), `<option value="zh-CN">中文</option>`)
+	require.Contains(t, string(response.Body), `<option value="en">English</option>`)
+	require.Contains(t, string(response.Body), "document.documentElement.lang = currentLanguage")
 	require.Contains(t, string(response.Body), `createElement("wbr")`)
 	require.NotContains(t, string(response.Body), "overflow-wrap: anywhere")
 	require.NotContains(t, string(response.Body), "access_token")

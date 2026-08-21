@@ -78,19 +78,23 @@
     .muted { color: var(--muted); }
     .stack { display: grid; gap: var(--space-4); }
     .header { margin-bottom: var(--space-6); }
+    .header-row { display: flex; justify-content: space-between; gap: var(--space-4); align-items: start; }
+    .language-field { display: grid; gap: var(--space-1); min-width: 132px; }
+    .language-field label { color: var(--muted); font-size: var(--font-xs); }
     .panel { padding: var(--space-6); border: var(--border-width) solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
     .warning { background: var(--warning-surface); border-color: color-mix(in srgb, var(--warning) 35%, var(--border)); }
     .credential-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: start; }
     .load-action { padding-top: var(--space-8); }
     .nowrap { white-space: nowrap; }
     label, legend { font-weight: var(--weight-label); }
+    select { min-height: var(--control-size); padding: var(--space-2) var(--space-3); color: var(--text); background: var(--surface); border: var(--border-width) solid var(--border); border-radius: var(--radius-sm); font: inherit; }
     input[type="password"] { width: 100%; min-height: var(--control-size); margin-top: var(--space-2); padding: var(--space-2) var(--space-3); color: var(--text); background: var(--surface-muted); border: var(--border-width) solid var(--border); border-radius: var(--radius-sm); font: inherit; }
     button { min-height: var(--control-size); padding: var(--space-2) var(--space-4); border: var(--border-width) solid transparent; border-radius: var(--radius-sm); font: inherit; font-weight: var(--weight-action); cursor: pointer; }
     button.primary { color: var(--accent-contrast); background: var(--accent); }
     button.primary:hover { background: var(--accent-hover); }
     button.secondary { color: var(--text); background: var(--surface-muted); border-color: var(--border); }
     button:disabled { cursor: wait; opacity: .62; }
-    button:focus-visible, input:focus-visible, .model:focus-within { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
+    button:focus-visible, input:focus-visible, select:focus-visible, .model:focus-within { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
     .notice { min-height: var(--space-6); margin-top: var(--space-3); color: var(--muted); }
     .notice.error { color: var(--danger); }
     .notice.success { color: var(--success); }
@@ -113,28 +117,38 @@
       .credential-grid, .metrics { grid-template-columns: 1fr; }
       .load-action { padding-top: 0; }
       .credential-grid button { width: 100%; }
-      .account-head { display: grid; }
+      .header-row, .account-head { display: grid; }
+      .language-field { width: 100%; }
     }
   </style>
 </head>
 <body>
   <main>
     <header class="header">
-      <h1>Cursor 管理</h1>
-      <p class="muted">由 Cursor 插件直接提供，不依赖 <span class="nowrap">CPA Manager Plus</span> 或 <span class="nowrap">CLIProxyAPI</span> 前端改造。</p>
+      <div class="header-row">
+        <h1 data-i18n="pageTitle">Cursor 管理</h1>
+        <div class="language-field">
+          <label for="language" data-i18n="languageLabel">语言</label>
+          <select id="language">
+            <option value="zh-CN">中文</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+      </div>
+      <p class="muted"><span data-i18n="headerPrefix">由 Cursor 插件直接提供，不依赖</span> <span class="nowrap">CPA Manager Plus</span> <span data-i18n="headerJoin">或</span> <span class="nowrap">CLIProxyAPI</span> <span data-i18n="headerSuffix">前端改造。</span></p>
     </header>
     <section class="panel warning" aria-labelledby="quota-title">
-      <h2 id="quota-title">订阅额度说明</h2>
-      <p>Cursor 未公开稳定的 OAuth <span class="nowrap">订阅剩余额度接口。</span>这里不会伪造<span class="nowrap">百分比；</span>仅显示插件进程启动后的<span class="nowrap">本地估算用量</span>与<span class="nowrap">请求状态。</span></p>
+      <h2 id="quota-title" data-i18n="quotaTitle">订阅额度说明</h2>
+      <p data-i18n="quotaBody">Cursor 未公开稳定的 OAuth 订阅剩余额度接口。这里不会伪造百分比；仅显示插件进程启动后的本地估算用量与请求状态。</p>
     </section>
     <section class="panel" aria-labelledby="credential-title">
       <div class="credential-grid">
         <div>
-          <label id="credential-title" for="management-key">CLIProxyAPI 管理密钥</label>
+          <label id="credential-title" for="management-key"><span class="nowrap">CLIProxyAPI</span> <span data-i18n="managementKeyLabel">管理密钥</span></label>
           <input id="management-key" type="password" autocomplete="off" spellcheck="false" aria-describedby="key-help">
-          <p id="key-help" class="muted">只保留在当前页面内存中，<span class="nowrap">不写入浏览器存储。</span></p>
+          <p id="key-help" class="muted" data-i18n="keyHelp">只保留在当前页面内存中，不写入浏览器存储。</p>
         </div>
-        <div class="load-action"><button id="load" class="primary" type="button">加载状态</button></div>
+        <div class="load-action"><button id="load" class="primary" type="button" data-i18n="loadStatus">加载状态</button></div>
       </div>
       <div id="notice" class="notice" role="status" aria-live="polite"></div>
     </section>
@@ -145,24 +159,188 @@
       "use strict";
       const statusPath = "/v0/management/plugins/cursor/status";
       const disabledPath = "/v0/management/plugins/cursor/disabled-models";
+      const languageStorageKey = "cursor-plugin-language";
+      const translations = {
+        "zh-CN": {
+          documentTitle: "Cursor 管理",
+          metaDescription: "Cursor 插件状态、本地估算用量与模型禁用管理。",
+          pageTitle: "Cursor 管理",
+          languageLabel: "语言",
+          headerPrefix: "由 Cursor 插件直接提供，不依赖",
+          headerJoin: "或",
+          headerSuffix: "前端改造。",
+          quotaTitle: "订阅额度说明",
+          quotaBody: "Cursor 未公开稳定的 OAuth 订阅剩余额度接口。这里不会伪造百分比；仅显示插件进程启动后的本地估算用量与请求状态。",
+          managementKeyLabel: "管理密钥",
+          keyHelp: "只保留在当前页面内存中，不写入浏览器存储。",
+          loadStatus: "加载状态",
+          missingKey: "请输入 CLIProxyAPI 管理密钥。",
+          authenticationFailed: "管理密钥无效或无权访问。",
+          requestFailed: "请求失败：HTTP {status}",
+          unexpectedError: "发生了未预期的错误。",
+          quotaBalance: "订阅余额",
+          unavailable: "不可用",
+          localEstimatedTokens: "本地估算 Token",
+          successfulRequests: "成功请求",
+          failedRequests: "失败请求",
+          savingModels: "正在保存模型禁用规则…",
+          savedModelsOne: "已保存 {count} 个禁用模型。",
+          savedModelsMany: "已保存 {count} 个禁用模型。",
+          modelLegendOne: "OAuth 模型禁用（{count} 个可用模型）",
+          modelLegendMany: "OAuth 模型禁用（{count} 个可用模型）",
+          saveModels: "保存模型禁用",
+          readingStatus: "正在读取 Cursor 插件状态…",
+          noAuthFiles: "未发现 Cursor OAuth 认证文件。",
+          loadedAccountsOne: "已加载 {count} 个 Cursor 账户。",
+          loadedAccountsMany: "已加载 {count} 个 Cursor 账户。",
+          status_active: "活跃",
+          status_inactive: "未激活",
+          status_disabled: "已禁用",
+          status_unavailable: "不可用",
+          status_error: "错误",
+          status_unknown: "未知"
+        },
+        en: {
+          documentTitle: "Cursor Management",
+          metaDescription: "Manage Cursor plugin status, local estimated usage, and disabled models.",
+          pageTitle: "Cursor Management",
+          languageLabel: "Language",
+          headerPrefix: "Served directly by the Cursor plugin. No frontend changes to",
+          headerJoin: "or",
+          headerSuffix: "are required.",
+          quotaTitle: "Subscription quota",
+          quotaBody: "Cursor does not publish a stable OAuth API for remaining subscription quota. This page never invents a percentage. It shows only local estimated usage and request status since the plugin process started.",
+          managementKeyLabel: "management key",
+          keyHelp: "Kept only in this page's memory and never written to browser storage.",
+          loadStatus: "Load status",
+          missingKey: "Enter the CLIProxyAPI management key.",
+          authenticationFailed: "The management key is invalid or is not authorized.",
+          requestFailed: "Request failed: HTTP {status}",
+          unexpectedError: "An unexpected error occurred.",
+          quotaBalance: "Subscription balance",
+          unavailable: "Unavailable",
+          localEstimatedTokens: "Local estimated tokens",
+          successfulRequests: "Successful requests",
+          failedRequests: "Failed requests",
+          savingModels: "Saving disabled-model rules…",
+          savedModelsOne: "Saved {count} disabled model.",
+          savedModelsMany: "Saved {count} disabled models.",
+          modelLegendOne: "OAuth model controls ({count} available model)",
+          modelLegendMany: "OAuth model controls ({count} available models)",
+          saveModels: "Save disabled models",
+          readingStatus: "Reading Cursor plugin status…",
+          noAuthFiles: "No Cursor OAuth credential files were found.",
+          loadedAccountsOne: "Loaded {count} Cursor account.",
+          loadedAccountsMany: "Loaded {count} Cursor accounts.",
+          status_active: "Active",
+          status_inactive: "Inactive",
+          status_disabled: "Disabled",
+          status_unavailable: "Unavailable",
+          status_error: "Error",
+          status_unknown: "Unknown"
+        }
+      };
+      const metaDescription = document.querySelector('meta[name="description"]');
+      const languageSelect = document.querySelector("#language");
       const keyInput = document.querySelector("#management-key");
       const loadButton = document.querySelector("#load");
       const notice = document.querySelector("#notice");
       const accounts = document.querySelector("#accounts");
+      let loadedAccounts = null;
+      let noticeState = null;
+      let currentLanguage = initialLanguage();
 
-      function setNotice(message, kind = "") {
+      function normalizeLanguage(language) {
+        return String(language || "").toLowerCase().startsWith("zh") ? "zh-CN" : "en";
+      }
+
+      function initialLanguage() {
+        try {
+          const saved = localStorage.getItem(languageStorageKey);
+          if (saved === "zh-CN" || saved === "en") return saved;
+        } catch (_) {
+          // Browser privacy settings may disable storage; language detection still works.
+        }
+        const browserLanguages = navigator.languages?.length ? navigator.languages : [navigator.language];
+        return browserLanguages.some((language) => String(language).toLowerCase().startsWith("zh")) ? "zh-CN" : "en";
+      }
+
+      function translate(key, values = {}) {
+        let message = translations[currentLanguage][key];
+        for (const [name, value] of Object.entries(values)) {
+          message = message.replace(`{${name}}`, String(value));
+        }
+        return message;
+      }
+
+      function countKey(one, many, count) {
+        return count === 1 ? one : many;
+      }
+
+      function preserveModelSelections() {
+        if (!loadedAccounts) return;
+        const selections = new Map();
+        for (const form of accounts.querySelectorAll("form[data-auth-index]")) {
+          selections.set(form.dataset.authIndex, new Set(
+            [...form.querySelectorAll("input[type=checkbox]:checked")].map((input) => input.value)
+          ));
+        }
+        for (const account of loadedAccounts) {
+          const selected = selections.get(account.auth_index);
+          if (!selected) continue;
+          for (const model of account.models) model.disabled = selected.has(model.id);
+        }
+      }
+
+      function applyLanguage(language, persist) {
+        preserveModelSelections();
+        currentLanguage = normalizeLanguage(language);
+        document.documentElement.lang = currentLanguage;
+        languageSelect.value = currentLanguage;
+        document.title = translate("documentTitle");
+        metaDescription.setAttribute("content", translate("metaDescription"));
+        for (const element of document.querySelectorAll("[data-i18n]")) {
+          element.textContent = translate(element.dataset.i18n);
+        }
+        if (persist) {
+          try {
+            localStorage.setItem(languageStorageKey, currentLanguage);
+          } catch (_) {
+            // The selected language still applies for the current page session.
+          }
+        }
+        renderAccounts();
+        renderNotice();
+      }
+
+      function renderNotice() {
+        const message = noticeState
+          ? noticeState.literal || translate(noticeState.key, noticeState.values)
+          : "";
+        const kind = noticeState?.kind || "";
         notice.textContent = message;
         notice.className = `notice ${kind}`.trim();
         notice.setAttribute("role", kind === "error" ? "alert" : "status");
       }
 
+      function setNoticeKey(key, values = {}, kind = "") {
+        noticeState = { key, values, kind };
+        renderNotice();
+      }
+
+      function setNoticeLiteral(message, kind = "") {
+        noticeState = { literal: message, kind };
+        renderNotice();
+      }
+
       async function api(path, options = {}) {
         const key = keyInput.value.trim();
-        if (!key) throw new Error("请输入 CLIProxyAPI 管理密钥。");
+        if (!key) throw new Error(translate("missingKey"));
         const headers = { Authorization: `Bearer ${key}`, ...(options.headers || {}) };
         const response = await fetch(path, { ...options, headers, cache: "no-store" });
         const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.error || `请求失败：HTTP ${response.status}`);
+        if (response.status === 401 || response.status === 403) throw new Error(translate("authenticationFailed"));
+        if (!response.ok) throw new Error(translate("requestFailed", { status: response.status }));
         return payload;
       }
 
@@ -201,24 +379,27 @@
         titleWrap.append(title, subtitle);
         const pill = document.createElement("span");
         pill.className = "pill";
-        pill.textContent = account.status || "unknown";
+        const rawStatus = String(account.status || "unknown").toLowerCase();
+        const statusKey = rawStatus.startsWith("unavailable") ? "status_unavailable" : `status_${rawStatus}`;
+        pill.textContent = translations[currentLanguage][statusKey] || account.status || translate("status_unknown");
         head.append(titleWrap, pill);
 
         const metrics = document.createElement("div");
         metrics.className = "metrics";
         metrics.append(
-          metric("订阅余额", "不可用"),
-          metric("本地估算 Token", account.local_usage.total_tokens || 0),
-          metric("成功请求", account.success || 0),
-          metric("失败请求", account.failed || 0)
+          metric(translate("quotaBalance"), translate("unavailable")),
+          metric(translate("localEstimatedTokens"), account.local_usage?.total_tokens || 0),
+          metric(translate("successfulRequests"), account.success || 0),
+          metric(translate("failedRequests"), account.failed || 0)
         );
 
         const form = document.createElement("form");
+        form.dataset.authIndex = account.auth_index;
         form.addEventListener("submit", async (event) => {
           event.preventDefault();
           const button = form.querySelector("button");
           button.disabled = true;
-          setNotice("正在保存模型禁用规则…");
+          setNoticeKey("savingModels");
           const selected = [...form.querySelectorAll("input[type=checkbox]:checked")].map((input) => input.value);
           try {
             await api(disabledPath, {
@@ -226,16 +407,18 @@
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ auth_index: account.auth_index, disabled_models: selected })
             });
-            setNotice(`已保存 ${selected.length} 个禁用模型。`, "success");
+            const noticeKey = countKey("savedModelsOne", "savedModelsMany", selected.length);
+            setNoticeKey(noticeKey, { count: selected.length }, "success");
           } catch (error) {
-            setNotice(error.message, "error");
+            setNoticeLiteral(error instanceof Error ? error.message : translate("unexpectedError"), "error");
           } finally {
             button.disabled = false;
           }
         });
         const fieldset = document.createElement("fieldset");
         const legend = document.createElement("legend");
-        legend.textContent = `OAuth 模型禁用（${account.models.length} 个可用模型）`;
+        const legendKey = countKey("modelLegendOne", "modelLegendMany", account.models.length);
+        legend.textContent = translate(legendKey, { count: account.models.length });
         const modelGrid = document.createElement("div");
         modelGrid.className = "models";
         for (const model of account.models) {
@@ -253,7 +436,7 @@
         const save = document.createElement("button");
         save.className = "secondary";
         save.type = "submit";
-        save.textContent = "保存模型禁用";
+        save.textContent = translate("saveModels");
         actions.append(save);
         fieldset.append(legend, modelGrid);
         form.append(fieldset, actions);
@@ -261,32 +444,42 @@
         return card;
       }
 
+      function renderAccounts() {
+        accounts.replaceChildren();
+        if (loadedAccounts === null) return;
+        if (!loadedAccounts.length) {
+          const empty = document.createElement("section");
+          empty.className = "panel empty";
+          empty.textContent = translate("noAuthFiles");
+          accounts.append(empty);
+          return;
+        }
+        accounts.append(...loadedAccounts.map(renderAccount));
+      }
+
       async function loadStatus() {
         loadButton.disabled = true;
-        setNotice("正在读取 Cursor 插件状态…");
+        setNoticeKey("readingStatus");
         accounts.replaceChildren();
         try {
           const status = await api(statusPath);
-          if (!status.accounts.length) {
-            const empty = document.createElement("section");
-            empty.className = "panel empty";
-            empty.textContent = "未发现 Cursor OAuth 认证文件。";
-            accounts.append(empty);
-          } else {
-            accounts.append(...status.accounts.map(renderAccount));
-          }
-          setNotice(`已加载 ${status.accounts.length} 个 Cursor 账户。`, "success");
+          loadedAccounts = status.accounts;
+          renderAccounts();
+          const noticeKey = countKey("loadedAccountsOne", "loadedAccountsMany", status.accounts.length);
+          setNoticeKey(noticeKey, { count: status.accounts.length }, "success");
         } catch (error) {
-          setNotice(error.message, "error");
+          setNoticeLiteral(error instanceof Error ? error.message : translate("unexpectedError"), "error");
         } finally {
           loadButton.disabled = false;
         }
       }
 
+      languageSelect.addEventListener("change", () => applyLanguage(languageSelect.value, true));
       loadButton.addEventListener("click", loadStatus);
       keyInput.addEventListener("keydown", (event) => {
         if (event.key === "Enter") loadStatus();
       });
+      applyLanguage(currentLanguage, false);
     })();
   </script>
 </body>
