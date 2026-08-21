@@ -18,6 +18,7 @@ type hostAuthFile struct {
 	AuthIndex   string `json:"auth_index"`
 	Name        string `json:"name"`
 	Path        string `json:"path"`
+	Source      string `json:"source"`
 	Type        string `json:"type"`
 	Provider    string `json:"provider"`
 	Label       string `json:"label"`

@@ -113,6 +113,36 @@ func Test_Handler_ManagementStatus_deduplicates_same_email_with_different_accoun
 	require.Len(t, status.Accounts, 1)
 }
 
+func Test_Handler_ManagementStatus_ignores_stale_memory_only_cursor_record(t *testing.T) {
+	// Given
+	persisted, err := cursorauth.MarshalCredentials(cursorauth.Credentials{
+		AccessToken: "access-1", RefreshToken: "refresh-1", AccountID: "account-1", Type: "cursor",
+	})
+	require.NoError(t, err)
+	stale, err := cursorauth.MarshalCredentials(cursorauth.Credentials{
+		AccessToken: "access-2", RefreshToken: "refresh-2", AccountID: "account-2", Type: "cursor",
+	})
+	require.NoError(t, err)
+	host := &fakeHostCaller{
+		listJSON: json.RawMessage(`{"files":[
+			{"auth_index":"cursor-auth","name":"cursor-auth.json","path":"/auth/cursor-auth.json","source":"file","type":"cursor","provider":"cursor","status":"active"},
+			{"auth_index":"cursor-auth-stale","name":"deleted-cursor-auth.json","path":"/auth/deleted-cursor-auth.json","source":"memory","type":"cursor","provider":"cursor","status":"active"}
+		]}`),
+		credentialJSONByIndex: map[string]json.RawMessage{"cursor-auth": persisted, "cursor-auth-stale": stale},
+	}
+	handler := NewHandler(Dependencies{Cursor: fakeModelCursorClient{models: []string{"auto"}}, Host: host})
+
+	// When
+	response, err := handler.managementStatus(context.Background())
+
+	// Then
+	require.NoError(t, err)
+	var status cursorManagementStatus
+	require.NoError(t, json.Unmarshal(response.Body, &status))
+	require.Len(t, status.Accounts, 1)
+	require.Equal(t, "cursor-auth", status.Accounts[0].AuthIndex)
+}
+
 func Test_Handler_UpdateDisabledModels_persists_rules_in_cursor_auth_without_losing_credentials(t *testing.T) {
 	credentials, err := cursorauth.MarshalCredentials(cursorauth.Credentials{
 		AccessToken:  "secret-access",
@@ -183,6 +213,9 @@ func Test_Handler_ManagementResource_serves_bilingual_shell_without_exposing_aut
 	require.Contains(t, string(response.Body), `disableAll: "全部禁用"`)
 	require.Contains(t, string(response.Body), `disableAll: "Disable all"`)
 	require.Contains(t, string(response.Body), `disableAll.dataset.action = "disable-all"`)
+	require.Contains(t, string(response.Body), `saveSettings: "保存设置"`)
+	require.Contains(t, string(response.Body), `saveSettings: "Save settings"`)
+	require.Contains(t, string(response.Body), `save.dataset.action = "save-settings"`)
 	require.Contains(t, string(response.Body), `<select id="language"`)
 	require.Contains(t, string(response.Body), `<option value="zh-CN">中文</option>`)
 	require.Contains(t, string(response.Body), `<option value="en">English</option>`)

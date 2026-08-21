@@ -26,7 +26,9 @@ func (handler *Handler) cursorAuthFiles(ctx context.Context) ([]hostAuthFile, er
 	files := make([]hostAuthFile, 0, len(response.Files))
 	seenPhysicalFiles := make(map[string]struct{}, len(response.Files))
 	for _, file := range response.Files {
-		if file.RuntimeOnly || (!strings.EqualFold(file.Provider, "cursor") && !strings.EqualFold(file.Type, "cursor")) {
+		isCursor := strings.EqualFold(file.Provider, "cursor") || strings.EqualFold(file.Type, "cursor")
+		isPersistent := file.Source == "" || strings.EqualFold(file.Source, "file")
+		if file.RuntimeOnly || !isCursor || !isPersistent {
 			continue
 		}
 		key := cursorPhysicalFileIdentity(file)

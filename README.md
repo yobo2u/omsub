@@ -4,21 +4,16 @@
 
 ## 获取与安装
 
-- [GitHub Releases](https://github.com/yobo2u/omsub/releases/tag/v0.4.0)
-- [Linux amd64 发布包](cursor-plugin/release/cursor-plugin-0.4.0-linux-amd64.tar.gz)
+- [GitHub Releases](https://github.com/yobo2u/omsub/releases/tag/v0.4.1)
+- [Linux amd64 发布包](https://github.com/yobo2u/omsub/releases/download/v0.4.1/cursor-plugin-0.4.1-linux-amd64.tar.gz)
 - [安装和调用说明](cursor-plugin/README.md)
 - [免责声明](cursor-plugin/DISCLAIMER.md)
 - [第三方来源说明](cursor-plugin/THIRD_PARTY_NOTICES.md)
 
 GitHub Release 同时提供符合 CLIProxyAPI 官方插件商店格式的
-`cursor_0.4.0_linux_amd64.zip` 和 `checksums.txt`。ZIP 根目录只包含
+`cursor_0.4.1_linux_amd64.zip` 和 `checksums.txt`。ZIP 根目录只包含
 `cursor.so`；TAR 包继续用于手动安装。
-
-发布包 SHA-256：
-
-```text
-489ae4926351c59df1b77af266b7887d151bea23cbec0205c85fd6734b5f1774  cursor-plugin-0.4.0-linux-amd64.tar.gz
-```
+发布物校验值见同一 Release 中的 `checksums.txt`。
 
 当前版本支持 OpenAI Chat Completions 文本请求、非流式响应、SSE 流式响应，以及插件自有的 Cursor 管理页、账户去重、单账户“全部禁用 / Disable all”、模型禁用和本地估算用量。Cursor 未公开稳定的 OAuth 订阅剩余额度接口，因此插件会明确显示额度不可用，不会伪造余额或百分比。暂不支持 tools、图片及 Responses API。
 

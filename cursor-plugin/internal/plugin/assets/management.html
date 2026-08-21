@@ -192,15 +192,15 @@
           localEstimatedTokens: "本地估算 Token",
           successfulRequests: "成功请求",
           failedRequests: "失败请求",
-          savingModels: "正在保存模型禁用规则…",
-          savedModelsOne: "已保存 {count} 个禁用模型。",
-          savedModelsMany: "已保存 {count} 个禁用模型。",
+          savingSettings: "正在保存设置…",
+          savedSettingsOne: "设置已保存，当前禁用 {count} 个模型。",
+          savedSettingsMany: "设置已保存，当前禁用 {count} 个模型。",
           modelLegendOne: "OAuth 模型禁用（{count} 个可用模型）",
           modelLegendMany: "OAuth 模型禁用（{count} 个可用模型）",
           disableAll: "全部禁用",
           allModelsSelectedOne: "已选择全部 {count} 个模型，请保存更改后生效。",
           allModelsSelectedMany: "已选择全部 {count} 个模型，请保存更改后生效。",
-          saveModels: "保存模型禁用",
+          saveSettings: "保存设置",
           readingStatus: "正在读取 Cursor 插件状态…",
           noAuthFiles: "未发现 Cursor OAuth 认证文件。",
           loadedAccountsOne: "已加载 {count} 个 Cursor 账户。",
@@ -242,15 +242,15 @@
           localEstimatedTokens: "Local estimated tokens",
           successfulRequests: "Successful requests",
           failedRequests: "Failed requests",
-          savingModels: "Saving disabled-model rules…",
-          savedModelsOne: "Saved {count} disabled model.",
-          savedModelsMany: "Saved {count} disabled models.",
+          savingSettings: "Saving settings…",
+          savedSettingsOne: "Settings saved. {count} model is disabled.",
+          savedSettingsMany: "Settings saved. {count} models are disabled.",
           modelLegendOne: "OAuth model controls ({count} available model)",
           modelLegendMany: "OAuth model controls ({count} available models)",
           disableAll: "Disable all",
           allModelsSelectedOne: "Selected all {count} model. Save changes to apply.",
           allModelsSelectedMany: "Selected all {count} models. Save changes to apply.",
-          saveModels: "Save disabled models",
+          saveSettings: "Save settings",
           readingStatus: "Reading Cursor plugin status…",
           noAuthFiles: "No Cursor OAuth credential files were found.",
           loadedAccountsOne: "Loaded {count} Cursor account.",
@@ -422,7 +422,7 @@
           event.preventDefault();
           const button = form.querySelector('button[type="submit"]');
           button.disabled = true;
-          setNoticeKey("savingModels");
+          setNoticeKey("savingSettings");
           const selected = [...form.querySelectorAll("input[type=checkbox]:checked")].map((input) => input.value);
           try {
             await api(disabledPath, {
@@ -430,7 +430,7 @@
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ auth_index: account.auth_index, disabled_models: selected })
             });
-            const noticeKey = countKey("savedModelsOne", "savedModelsMany", selected.length);
+            const noticeKey = countKey("savedSettingsOne", "savedSettingsMany", selected.length);
             setNoticeKey(noticeKey, { count: selected.length }, "success");
           } catch (error) {
             setNoticeLiteral(error instanceof Error ? error.message : translate("unexpectedError"), "error");
@@ -472,8 +472,9 @@
         const save = document.createElement("button");
         save.className = "primary";
         save.type = "submit";
-        save.textContent = translate("saveModels");
-        actions.append(disableAll, save);
+        save.dataset.action = "save-settings";
+        save.textContent = translate("saveSettings");
+        actions.append(save, disableAll);
         fieldset.append(legend, modelGrid);
         form.append(fieldset, actions);
         card.append(head, metrics, form);
