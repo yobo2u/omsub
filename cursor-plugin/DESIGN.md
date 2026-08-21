@@ -38,6 +38,7 @@ Preserve the compact, neutral system-tool character of CLIProxyAPI's own plugin 
 
 - The management key remains in page memory only and is never persisted.
 - “加载状态” fetches the authenticated plugin status endpoint.
+- “全部禁用 / Disable all” selects every available model for the current account but does not persist until the explicit save action.
 - “保存模型禁用” submits only the selected account and model IDs.
 - Buttons expose loading and disabled states; completion is announced to assistive technology.
 - The initial language follows a previously saved preference, then the browser language, with English as the fallback.

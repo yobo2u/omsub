@@ -24,12 +24,31 @@ func (handler *Handler) cursorAuthFiles(ctx context.Context) ([]hostAuthFile, er
 		return nil, fmt.Errorf("decode auth list: %w", err)
 	}
 	files := make([]hostAuthFile, 0, len(response.Files))
+	seenPhysicalFiles := make(map[string]struct{}, len(response.Files))
 	for _, file := range response.Files {
-		if strings.EqualFold(file.Provider, "cursor") || strings.EqualFold(file.Type, "cursor") {
-			files = append(files, file)
+		if file.RuntimeOnly || (!strings.EqualFold(file.Provider, "cursor") && !strings.EqualFold(file.Type, "cursor")) {
+			continue
 		}
+		key := cursorPhysicalFileIdentity(file)
+		if _, duplicate := seenPhysicalFiles[key]; key != "" && duplicate {
+			continue
+		}
+		if key != "" {
+			seenPhysicalFiles[key] = struct{}{}
+		}
+		files = append(files, file)
 	}
 	return files, nil
+}
+
+func cursorPhysicalFileIdentity(file hostAuthFile) string {
+	if path := strings.ToLower(strings.TrimSpace(file.Path)); path != "" {
+		return "path:" + path
+	}
+	if name := strings.ToLower(strings.TrimSpace(file.Name)); name != "" {
+		return "name:" + name
+	}
+	return ""
 }
 
 func (handler *Handler) getCursorCredential(ctx context.Context, authIndex string) (cursorauth.Credentials, error) {

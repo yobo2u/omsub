@@ -100,7 +100,7 @@
     .notice.success { color: var(--success); }
     .account { box-shadow: var(--shadow); }
     .account-head { display: flex; justify-content: space-between; gap: var(--space-3); align-items: start; }
-    .pill { display: inline-flex; padding: var(--space-1) var(--space-2); color: var(--success); background: var(--surface-muted); border-radius: var(--radius-pill); font-size: var(--font-xs); font-weight: var(--weight-action); }
+    .pill { display: inline-flex; align-self: start; width: max-content; padding: var(--space-1) var(--space-2); color: var(--success); background: var(--surface-muted); border-radius: var(--radius-pill); font-size: var(--font-xs); font-weight: var(--weight-action); }
     .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-2); margin-top: var(--space-4); }
     .metric { padding: var(--space-3); border-radius: var(--radius-sm); background: var(--surface-muted); }
     .metric span { display: block; color: var(--muted); font-size: var(--font-xs); }
@@ -110,7 +110,7 @@
     .model { display: flex; gap: var(--space-3); align-items: start; min-height: var(--control-size); padding: var(--space-3); border: var(--border-width) solid var(--border); border-radius: var(--radius-sm); background: var(--surface-muted); }
     .model input { margin-top: var(--space-1); }
     .model code { min-width: 0; overflow-wrap: normal; word-break: normal; font-size: var(--font-xs); }
-    .actions { display: flex; justify-content: flex-end; margin-top: var(--space-4); }
+    .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4); }
     .empty { padding: var(--space-6); text-align: center; color: var(--muted); }
     @media (max-width: 720px) {
       main { width: min(100% - var(--space-6), var(--content-width)); padding-top: var(--space-6); }
@@ -119,6 +119,7 @@
       .credential-grid button { width: 100%; }
       .header-row, .account-head { display: grid; }
       .language-field { width: 100%; }
+      .actions button { width: 100%; }
     }
   </style>
 </head>
@@ -139,7 +140,7 @@
     </header>
     <section class="panel warning" aria-labelledby="quota-title">
       <h2 id="quota-title" data-i18n="quotaTitle">订阅额度说明</h2>
-      <p data-i18n="quotaBody">Cursor 未公开稳定的 OAuth 订阅剩余额度接口。这里不会伪造百分比；仅显示插件进程启动后的本地估算用量与请求状态。</p>
+      <p><span data-i18n="quotaBodyPrefix">Cursor 未公开稳定的 OAuth </span><span class="nowrap" data-i18n="quotaBodyTerm">订阅剩余额度接口</span><span data-i18n="quotaAccuracyPrefix">。这里不会伪造</span><span class="nowrap" data-i18n="quotaAccuracyTerm">百分比</span><span data-i18n="quotaUsagePrefix">；仅显示插件进程启动后的</span><span class="nowrap" data-i18n="quotaUsageTerm">本地估算用量</span><span data-i18n="quotaUsageJoin">与</span><span class="nowrap" data-i18n="quotaStatusTerm">请求状态</span><span data-i18n="quotaBodySuffix">。</span></p>
     </section>
     <section class="panel" aria-labelledby="credential-title">
       <div class="credential-grid">
@@ -170,7 +171,15 @@
           headerJoin: "或",
           headerSuffix: "前端改造。",
           quotaTitle: "订阅额度说明",
-          quotaBody: "Cursor 未公开稳定的 OAuth 订阅剩余额度接口。这里不会伪造百分比；仅显示插件进程启动后的本地估算用量与请求状态。",
+          quotaBodyPrefix: "Cursor 未公开稳定的 OAuth ",
+          quotaBodyTerm: "订阅剩余额度接口",
+          quotaAccuracyPrefix: "。这里不会伪造",
+          quotaAccuracyTerm: "百分比",
+          quotaUsagePrefix: "；仅显示插件进程启动后的",
+          quotaUsageTerm: "本地估算用量",
+          quotaUsageJoin: "与",
+          quotaStatusTerm: "请求状态",
+          quotaBodySuffix: "。",
           managementKeyLabel: "管理密钥",
           keyHelp: "只保留在当前页面内存中，不写入浏览器存储。",
           loadStatus: "加载状态",
@@ -188,6 +197,9 @@
           savedModelsMany: "已保存 {count} 个禁用模型。",
           modelLegendOne: "OAuth 模型禁用（{count} 个可用模型）",
           modelLegendMany: "OAuth 模型禁用（{count} 个可用模型）",
+          disableAll: "全部禁用",
+          allModelsSelectedOne: "已选择全部 {count} 个模型，请保存更改后生效。",
+          allModelsSelectedMany: "已选择全部 {count} 个模型，请保存更改后生效。",
           saveModels: "保存模型禁用",
           readingStatus: "正在读取 Cursor 插件状态…",
           noAuthFiles: "未发现 Cursor OAuth 认证文件。",
@@ -209,7 +221,15 @@
           headerJoin: "or",
           headerSuffix: "are required.",
           quotaTitle: "Subscription quota",
-          quotaBody: "Cursor does not publish a stable OAuth API for remaining subscription quota. This page never invents a percentage. It shows only local estimated usage and request status since the plugin process started.",
+          quotaBodyPrefix: "Cursor does not publish a stable OAuth API for ",
+          quotaBodyTerm: "remaining subscription quota",
+          quotaAccuracyPrefix: ". This page never invents ",
+          quotaAccuracyTerm: "a percentage",
+          quotaUsagePrefix: ". It shows only ",
+          quotaUsageTerm: "local estimated usage",
+          quotaUsageJoin: " and ",
+          quotaStatusTerm: "request status",
+          quotaBodySuffix: " since the plugin process started.",
           managementKeyLabel: "management key",
           keyHelp: "Kept only in this page's memory and never written to browser storage.",
           loadStatus: "Load status",
@@ -227,6 +247,9 @@
           savedModelsMany: "Saved {count} disabled models.",
           modelLegendOne: "OAuth model controls ({count} available model)",
           modelLegendMany: "OAuth model controls ({count} available models)",
+          disableAll: "Disable all",
+          allModelsSelectedOne: "Selected all {count} model. Save changes to apply.",
+          allModelsSelectedMany: "Selected all {count} models. Save changes to apply.",
           saveModels: "Save disabled models",
           readingStatus: "Reading Cursor plugin status…",
           noAuthFiles: "No Cursor OAuth credential files were found.",
@@ -397,7 +420,7 @@
         form.dataset.authIndex = account.auth_index;
         form.addEventListener("submit", async (event) => {
           event.preventDefault();
-          const button = form.querySelector("button");
+          const button = form.querySelector('button[type="submit"]');
           button.disabled = true;
           setNoticeKey("savingModels");
           const selected = [...form.querySelectorAll("input[type=checkbox]:checked")].map((input) => input.value);
@@ -433,11 +456,24 @@
         }
         const actions = document.createElement("div");
         actions.className = "actions";
+        const disableAll = document.createElement("button");
+        disableAll.className = "secondary";
+        disableAll.type = "button";
+        disableAll.dataset.action = "disable-all";
+        disableAll.textContent = translate("disableAll");
+        disableAll.disabled = account.models.length === 0;
+        disableAll.addEventListener("click", () => {
+          for (const checkbox of modelGrid.querySelectorAll('input[type="checkbox"]')) {
+            checkbox.checked = true;
+          }
+          const noticeKey = countKey("allModelsSelectedOne", "allModelsSelectedMany", account.models.length);
+          setNoticeKey(noticeKey, { count: account.models.length });
+        });
         const save = document.createElement("button");
-        save.className = "secondary";
+        save.className = "primary";
         save.type = "submit";
         save.textContent = translate("saveModels");
-        actions.append(save);
+        actions.append(disableAll, save);
         fieldset.append(legend, modelGrid);
         form.append(fieldset, actions);
         card.append(head, metrics, form);

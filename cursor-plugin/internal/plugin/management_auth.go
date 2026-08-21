@@ -5,21 +5,26 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
+
+	"cursorplugin/internal/cursorauth"
 )
 
 const quotaUnavailableReason = "Cursor does not publish a subscription remaining-quota API"
 
 type hostAuthFile struct {
-	AuthIndex string `json:"auth_index"`
-	Name      string `json:"name"`
-	Type      string `json:"type"`
-	Provider  string `json:"provider"`
-	Label     string `json:"label"`
-	Status    string `json:"status"`
-	Success   int64  `json:"success"`
-	Failed    int64  `json:"failed"`
+	AuthIndex   string `json:"auth_index"`
+	Name        string `json:"name"`
+	Path        string `json:"path"`
+	Type        string `json:"type"`
+	Provider    string `json:"provider"`
+	Label       string `json:"label"`
+	Status      string `json:"status"`
+	Success     int64  `json:"success"`
+	Failed      int64  `json:"failed"`
+	RuntimeOnly bool   `json:"runtime_only"`
 }
 
 type hostAuthListResponse struct {
@@ -71,8 +76,22 @@ func (handler *Handler) managementStatus(ctx context.Context) (managementRespons
 		return managementError(http.StatusBadGateway, err.Error()), nil
 	}
 	status := cursorManagementStatus{Provider: "cursor", GeneratedAt: time.Now().UTC(), Accounts: make([]cursorAccountStatus, 0, len(files))}
+	seenIdentities := make(map[string]struct{}, len(files))
 	for _, file := range files {
-		account, accountErr := handler.cursorAccountStatus(ctx, file)
+		credential, credentialErr := handler.getCursorCredential(ctx, file.AuthIndex)
+		if credentialErr == nil {
+			identities := cursorCredentialIdentities(credential)
+			if slices.ContainsFunc(identities, func(identity string) bool {
+				_, duplicate := seenIdentities[identity]
+				return duplicate
+			}) {
+				continue
+			}
+			for _, identity := range identities {
+				seenIdentities[identity] = struct{}{}
+			}
+		}
+		account, accountErr := handler.cursorAccountStatusWithCredential(ctx, file, credential, credentialErr)
 		if accountErr != nil {
 			account = cursorAccountStatus{
 				AuthIndex:         file.AuthIndex,
@@ -88,10 +107,9 @@ func (handler *Handler) managementStatus(ctx context.Context) (managementRespons
 	return managementJSON(http.StatusOK, status)
 }
 
-func (handler *Handler) cursorAccountStatus(ctx context.Context, file hostAuthFile) (cursorAccountStatus, error) {
-	credential, err := handler.getCursorCredential(ctx, file.AuthIndex)
-	if err != nil {
-		return cursorAccountStatus{}, err
+func (handler *Handler) cursorAccountStatusWithCredential(ctx context.Context, file hostAuthFile, credential cursorauth.Credentials, credentialErr error) (cursorAccountStatus, error) {
+	if credentialErr != nil {
+		return cursorAccountStatus{}, credentialErr
 	}
 	models, err := handler.cursor.DiscoverModels(ctx, credential.AccessToken)
 	if err != nil {
@@ -118,6 +136,17 @@ func (handler *Handler) cursorAccountStatus(ctx context.Context, file hostAuthFi
 		LocalUsage:        handler.usage.snapshot(file.AuthIndex),
 		Models:            items,
 	}, nil
+}
+
+func cursorCredentialIdentities(credential cursorauth.Credentials) []string {
+	identities := make([]string, 0, 2)
+	if accountID := strings.ToLower(strings.TrimSpace(credential.AccountID)); accountID != "" {
+		identities = append(identities, "account:"+accountID)
+	}
+	if email := strings.ToLower(strings.TrimSpace(credential.Email)); email != "" {
+		identities = append(identities, "email:"+email)
+	}
+	return identities
 }
 
 func (handler *Handler) updateDisabledModels(ctx context.Context, body []byte) (managementResponse, error) {

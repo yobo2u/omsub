@@ -18,8 +18,8 @@
 解压发布包，然后把 `--plugins-dir` 指向 CLIProxyAPI 配置中的 `plugins.dir`：
 
 ```sh
-tar -xzf cursor-plugin-0.3.0-linux-amd64.tar.gz
-cd cursor-plugin-0.3.0-linux-amd64
+tar -xzf cursor-plugin-0.4.0-linux-amd64.tar.gz
+cd cursor-plugin-0.4.0-linux-amd64
 sudo ./install.sh --plugins-dir /opt/cpa-manager-plus/cliproxyapi/plugins
 ```
 
@@ -42,13 +42,15 @@ plugins:
 插件启用后会通过 CLIProxyAPI 的原生插件资源机制注册“Cursor 管理”菜单，不需要修改 CPA Manager Plus 页面。管理页提供：
 
 - Cursor OAuth 账户状态和实时可用模型；
-- 每个账户的模型禁用选择器；
+- 每个账户的模型禁用选择器，以及需确认保存的“全部禁用 / Disable all”快捷操作；
 - 插件进程启动后的本地估算 Token 与请求计数；
 - 明确的订阅额度不可用状态。
 
 管理页完整支持中文和英文。首次打开时优先使用已保存的语言偏好，否则跟随浏览器语言，非中文环境默认英文；页面右上角可随时切换“中文 / English”。切换会同步更新静态文案、账户状态、用量指标、模型控制、操作提示、页面标题及无障碍语言标记。插件只保存语言偏好，管理密钥仍仅保留在当前页面内存中。
 
 模型禁用规则保存在对应 Cursor OAuth 认证 JSON 的 `disabled_models` 字段中。插件会同时在模型发现和请求执行阶段应用规则，刷新 OAuth token 时也会保留规则。
+
+账户列表只显示可持久化的 Cursor OAuth 凭据，不显示 CLIProxyAPI 的 `runtime_only` 运行时投影；如果旧数据中多个条目解析到同一个 Cursor `account_id` 或邮箱，也只显示一个逻辑账户。
 
 插件浏览器资源按 CLIProxyAPI 设计是未认证的静态入口，因此页面不会直接暴露账户数据；读取状态或保存规则时需要输入 CLIProxyAPI 管理密钥。密钥只保留在当前页面内存中，不写入浏览器存储。
 
