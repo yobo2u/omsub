@@ -21,10 +21,15 @@ type StreamEmitter interface {
 	Close(string, error) error
 }
 
+type HostCaller interface {
+	Call(context.Context, string, any) (json.RawMessage, error)
+}
+
 type Dependencies struct {
 	Auth    *cursorauth.Service
 	Cursor  CursorClient
 	Emitter StreamEmitter
+	Host    HostCaller
 }
 
 type envelope struct {

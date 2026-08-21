@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Cursor 插件状态、本地估算用量与模型禁用管理。">
+  <title>Cursor 管理</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --canvas: #f5f7fa;
+      --surface: #ffffff;
+      --surface-muted: #f0f3f7;
+      --text: #17202a;
+      --muted: #657080;
+      --border: #d8dee8;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --accent-contrast: #ffffff;
+      --success: #18794e;
+      --warning: #9a6700;
+      --warning-surface: #fff8db;
+      --danger: #b42318;
+      --focus: #60a5fa;
+      --shadow: 0 8px 24px rgba(23, 32, 42, .08);
+      --space-1: 4px;
+      --space-2: 8px;
+      --space-3: 12px;
+      --space-4: 16px;
+      --space-6: 24px;
+      --space-8: 32px;
+      --space-16: 64px;
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-pill: 999px;
+      --border-width: 1px;
+      --control-size: 44px;
+      --font-xs: 13px;
+      --font-lg: 18px;
+      --font-section: 20px;
+      --font-title-min: 28px;
+      --font-title-max: 40px;
+      --weight-label: 650;
+      --weight-action: 700;
+      --content-width: 960px;
+      --model-cell-width: 220px;
+      --model-list-height: 360px;
+      --focus-width: 3px;
+      --focus-offset: 2px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --canvas: #0f141b;
+        --surface: #171e27;
+        --surface-muted: #202936;
+        --text: #edf2f7;
+        --muted: #a9b4c2;
+        --border: #344150;
+        --accent: #6ea8fe;
+        --accent-hover: #8abbff;
+        --accent-contrast: #08111f;
+        --success: #63d6a2;
+        --warning: #f5c451;
+        --warning-surface: #302813;
+        --danger: #ff8a80;
+        --focus: #93c5fd;
+        --shadow: 0 8px 24px rgba(0, 0, 0, .28);
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--canvas); color: var(--text); line-height: 1.55; }
+    main { width: min(var(--content-width), calc(100% - var(--space-8))); margin: 0 auto; padding: var(--space-8) 0 var(--space-16); }
+    h1, h2 { margin: 0; letter-spacing: -.02em; }
+    h1 { font-size: clamp(var(--font-title-min), 5vw, var(--font-title-max)); line-height: 1.15; }
+    h2 { font-size: var(--font-section); }
+    p { margin: var(--space-2) 0 0; }
+    .muted { color: var(--muted); }
+    .stack { display: grid; gap: var(--space-4); }
+    .header { margin-bottom: var(--space-6); }
+    .panel { padding: var(--space-6); border: var(--border-width) solid var(--border); border-radius: var(--radius-md); background: var(--surface); }
+    .warning { background: var(--warning-surface); border-color: color-mix(in srgb, var(--warning) 35%, var(--border)); }
+    .credential-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: start; }
+    .load-action { padding-top: var(--space-8); }
+    .nowrap { white-space: nowrap; }
+    label, legend { font-weight: var(--weight-label); }
+    input[type="password"] { width: 100%; min-height: var(--control-size); margin-top: var(--space-2); padding: var(--space-2) var(--space-3); color: var(--text); background: var(--surface-muted); border: var(--border-width) solid var(--border); border-radius: var(--radius-sm); font: inherit; }
+    button { min-height: var(--control-size); padding: var(--space-2) var(--space-4); border: var(--border-width) solid transparent; border-radius: var(--radius-sm); font: inherit; font-weight: var(--weight-action); cursor: pointer; }
+    button.primary { color: var(--accent-contrast); background: var(--accent); }
+    button.primary:hover { background: var(--accent-hover); }
+    button.secondary { color: var(--text); background: var(--surface-muted); border-color: var(--border); }
+    button:disabled { cursor: wait; opacity: .62; }
+    button:focus-visible, input:focus-visible, .model:focus-within { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
+    .notice { min-height: var(--space-6); margin-top: var(--space-3); color: var(--muted); }
+    .notice.error { color: var(--danger); }
+    .notice.success { color: var(--success); }
+    .account { box-shadow: var(--shadow); }
+    .account-head { display: flex; justify-content: space-between; gap: var(--space-3); align-items: start; }
+    .pill { display: inline-flex; padding: var(--space-1) var(--space-2); color: var(--success); background: var(--surface-muted); border-radius: var(--radius-pill); font-size: var(--font-xs); font-weight: var(--weight-action); }
+    .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-2); margin-top: var(--space-4); }
+    .metric { padding: var(--space-3); border-radius: var(--radius-sm); background: var(--surface-muted); }
+    .metric span { display: block; color: var(--muted); font-size: var(--font-xs); }
+    .metric strong { display: block; margin-top: var(--space-1); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--font-lg); }
+    fieldset { min-width: 0; margin: var(--space-6) 0 0; padding: 0; border: 0; }
+    .models { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(var(--model-cell-width), 100%), 1fr)); gap: var(--space-2); margin-top: var(--space-3); max-height: var(--model-list-height); overflow: auto; }
+    .model { display: flex; gap: var(--space-3); align-items: start; min-height: var(--control-size); padding: var(--space-3); border: var(--border-width) solid var(--border); border-radius: var(--radius-sm); background: var(--surface-muted); }
+    .model input { margin-top: var(--space-1); }
+    .model code { min-width: 0; overflow-wrap: normal; word-break: normal; font-size: var(--font-xs); }
+    .actions { display: flex; justify-content: flex-end; margin-top: var(--space-4); }
+    .empty { padding: var(--space-6); text-align: center; color: var(--muted); }
+    @media (max-width: 720px) {
+      main { width: min(100% - var(--space-6), var(--content-width)); padding-top: var(--space-6); }
+      .credential-grid, .metrics { grid-template-columns: 1fr; }
+      .load-action { padding-top: 0; }
+      .credential-grid button { width: 100%; }
+      .account-head { display: grid; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="header">
+      <h1>Cursor 管理</h1>
+      <p class="muted">由 Cursor 插件直接提供，不依赖 <span class="nowrap">CPA Manager Plus</span> 或 <span class="nowrap">CLIProxyAPI</span> 前端改造。</p>
+    </header>
+    <section class="panel warning" aria-labelledby="quota-title">
+      <h2 id="quota-title">订阅额度说明</h2>
+      <p>Cursor 未公开稳定的 OAuth <span class="nowrap">订阅剩余额度接口。</span>这里不会伪造<span class="nowrap">百分比；</span>仅显示插件进程启动后的<span class="nowrap">本地估算用量</span>与<span class="nowrap">请求状态。</span></p>
+    </section>
+    <section class="panel" aria-labelledby="credential-title">
+      <div class="credential-grid">
+        <div>
+          <label id="credential-title" for="management-key">CLIProxyAPI 管理密钥</label>
+          <input id="management-key" type="password" autocomplete="off" spellcheck="false" aria-describedby="key-help">
+          <p id="key-help" class="muted">只保留在当前页面内存中，<span class="nowrap">不写入浏览器存储。</span></p>
+        </div>
+        <div class="load-action"><button id="load" class="primary" type="button">加载状态</button></div>
+      </div>
+      <div id="notice" class="notice" role="status" aria-live="polite"></div>
+    </section>
+    <div id="accounts" class="stack" aria-live="polite"></div>
+  </main>
+  <script>
+    (() => {
+      "use strict";
+      const statusPath = "/v0/management/plugins/cursor/status";
+      const disabledPath = "/v0/management/plugins/cursor/disabled-models";
+      const keyInput = document.querySelector("#management-key");
+      const loadButton = document.querySelector("#load");
+      const notice = document.querySelector("#notice");
+      const accounts = document.querySelector("#accounts");
+
+      function setNotice(message, kind = "") {
+        notice.textContent = message;
+        notice.className = `notice ${kind}`.trim();
+        notice.setAttribute("role", kind === "error" ? "alert" : "status");
+      }
+
+      async function api(path, options = {}) {
+        const key = keyInput.value.trim();
+        if (!key) throw new Error("请输入 CLIProxyAPI 管理密钥。");
+        const headers = { Authorization: `Bearer ${key}`, ...(options.headers || {}) };
+        const response = await fetch(path, { ...options, headers, cache: "no-store" });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || `请求失败：HTTP ${response.status}`);
+        return payload;
+      }
+
+      function metric(label, value) {
+        const item = document.createElement("div");
+        item.className = "metric";
+        const name = document.createElement("span");
+        name.textContent = label;
+        const number = document.createElement("strong");
+        number.textContent = String(value);
+        item.append(name, number);
+        return item;
+      }
+
+      function modelID(id) {
+        const code = document.createElement("code");
+        for (const part of id.split(/([/_-])/)) {
+          if (!part) continue;
+          code.append(document.createTextNode(part));
+          if (/^[/_-]$/.test(part)) code.append(document.createElement("wbr"));
+        }
+        return code;
+      }
+
+      function renderAccount(account) {
+        const card = document.createElement("section");
+        card.className = "panel account";
+        const head = document.createElement("div");
+        head.className = "account-head";
+        const titleWrap = document.createElement("div");
+        const title = document.createElement("h2");
+        title.textContent = account.label || account.name;
+        const subtitle = document.createElement("p");
+        subtitle.className = "muted";
+        subtitle.textContent = account.name;
+        titleWrap.append(title, subtitle);
+        const pill = document.createElement("span");
+        pill.className = "pill";
+        pill.textContent = account.status || "unknown";
+        head.append(titleWrap, pill);
+
+        const metrics = document.createElement("div");
+        metrics.className = "metrics";
+        metrics.append(
+          metric("订阅余额", "不可用"),
+          metric("本地估算 Token", account.local_usage.total_tokens || 0),
+          metric("成功请求", account.success || 0),
+          metric("失败请求", account.failed || 0)
+        );
+
+        const form = document.createElement("form");
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const button = form.querySelector("button");
+          button.disabled = true;
+          setNotice("正在保存模型禁用规则…");
+          const selected = [...form.querySelectorAll("input[type=checkbox]:checked")].map((input) => input.value);
+          try {
+            await api(disabledPath, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ auth_index: account.auth_index, disabled_models: selected })
+            });
+            setNotice(`已保存 ${selected.length} 个禁用模型。`, "success");
+          } catch (error) {
+            setNotice(error.message, "error");
+          } finally {
+            button.disabled = false;
+          }
+        });
+        const fieldset = document.createElement("fieldset");
+        const legend = document.createElement("legend");
+        legend.textContent = `OAuth 模型禁用（${account.models.length} 个可用模型）`;
+        const modelGrid = document.createElement("div");
+        modelGrid.className = "models";
+        for (const model of account.models) {
+          const label = document.createElement("label");
+          label.className = "model";
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.value = model.id;
+          checkbox.checked = Boolean(model.disabled);
+          label.append(checkbox, modelID(model.id));
+          modelGrid.append(label);
+        }
+        const actions = document.createElement("div");
+        actions.className = "actions";
+        const save = document.createElement("button");
+        save.className = "secondary";
+        save.type = "submit";
+        save.textContent = "保存模型禁用";
+        actions.append(save);
+        fieldset.append(legend, modelGrid);
+        form.append(fieldset, actions);
+        card.append(head, metrics, form);
+        return card;
+      }
+
+      async function loadStatus() {
+        loadButton.disabled = true;
+        setNotice("正在读取 Cursor 插件状态…");
+        accounts.replaceChildren();
+        try {
+          const status = await api(statusPath);
+          if (!status.accounts.length) {
+            const empty = document.createElement("section");
+            empty.className = "panel empty";
+            empty.textContent = "未发现 Cursor OAuth 认证文件。";
+            accounts.append(empty);
+          } else {
+            accounts.append(...status.accounts.map(renderAccount));
+          }
+          setNotice(`已加载 ${status.accounts.length} 个 Cursor 账户。`, "success");
+        } catch (error) {
+          setNotice(error.message, "error");
+        } finally {
+          loadButton.disabled = false;
+        }
+      }
+
+      loadButton.addEventListener("click", loadStatus);
+      keyInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") loadStatus();
+      });
+    })();
+  </script>
+</body>
+</html>

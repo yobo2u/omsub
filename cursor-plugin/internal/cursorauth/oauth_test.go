@@ -44,12 +44,17 @@ func Test_Service_Refresh_preserves_refresh_token_when_response_omits_it(t *test
 	service := NewService(&http.Client{Transport: transport}, DefaultEndpoints())
 
 	// When
-	credentials, err := service.Refresh(context.Background(), Credentials{RefreshToken: "old-refresh", Type: "cursor"})
+	credentials, err := service.Refresh(context.Background(), Credentials{
+		RefreshToken:   "old-refresh",
+		Type:           "cursor",
+		DisabledModels: []string{"gpt-5"},
+	})
 
 	// Then
 	require.NoError(t, err)
 	require.Equal(t, "new-access", credentials.AccessToken)
 	require.Equal(t, "old-refresh", credentials.RefreshToken)
+	require.Equal(t, []string{"gpt-5"}, credentials.DisabledModels)
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)

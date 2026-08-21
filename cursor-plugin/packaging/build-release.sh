@@ -3,7 +3,7 @@ set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
-version=${1:-0.1.0}
+version=${1:-0.2.0}
 output_dir=${2:-"$project_dir/release"}
 binary=${CURSOR_PLUGIN_BINARY:-"$project_dir/cursor.so"}
 
@@ -19,6 +19,7 @@ install -m 0755 "$binary" "$package_dir/bin/linux/amd64/cursor.so"
 install -m 0755 "$script_dir/install.sh" "$package_dir/install.sh"
 install -m 0755 "$script_dir/uninstall.sh" "$package_dir/uninstall.sh"
 cp "$project_dir/README.md" "$package_dir/README.md"
+cp "$project_dir/DESIGN.md" "$package_dir/DESIGN.md"
 cp "$project_dir/DISCLAIMER.md" "$package_dir/DISCLAIMER.md"
 cp "$project_dir/LICENSE" "$package_dir/LICENSE"
 cp "$project_dir/THIRD_PARTY_NOTICES.md" "$package_dir/THIRD_PARTY_NOTICES.md"

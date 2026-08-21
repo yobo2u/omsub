@@ -1,6 +1,6 @@
 # Cursor for CPA/CLIProxyAPI
 
-这是一个独立的 CLIProxyAPI 原生动态库插件，把用户本人授权的 Cursor 订阅接入 OpenAI 兼容的 `/v1/chat/completions` 接口。插件直接安装到 CLIProxyAPI 的插件目录，不要求部署或运行 opencodex 服务。
+这是一个独立的 CLIProxyAPI 原生动态库插件，把用户本人授权的 Cursor 订阅接入 OpenAI 兼容的 `/v1/chat/completions` 接口。插件直接安装到 CLIProxyAPI 的插件目录，不要求部署或运行 opencodex 服务，也不修改 CPA Manager Plus 或 CLIProxyAPI 源码。
 
 > [!IMPORTANT]
 > 本项目是非官方社区插件，与 Cursor、Anysphere、CLIProxyAPI、CPA Manager Plus 或 opencodex 无隶属或授权关系。使用前请完整阅读[免责声明](DISCLAIMER.md)，并自行确认符合适用法律、服务条款及订阅限制。
@@ -10,15 +10,16 @@
 - CLIProxyAPI `v7.2.131`，提交 `323b727`
 - CPA Manager Plus `v1.11.10`
 - Linux amd64
-- Cursor OAuth、204 个 Cursor 模型发现、非流式、SSE 流式和错误路径
+- Cursor OAuth、动态模型发现、非流式、SSE 流式和错误路径
+- 插件自有 Cursor 管理页、受认证管理 API、模型禁用与本地估算用量
 
 ## 安装
 
 解压发布包，然后把 `--plugins-dir` 指向 CLIProxyAPI 配置中的 `plugins.dir`：
 
 ```sh
-tar -xzf cursor-plugin-0.1.0-linux-amd64.tar.gz
-cd cursor-plugin-0.1.0-linux-amd64
+tar -xzf cursor-plugin-0.2.0-linux-amd64.tar.gz
+cd cursor-plugin-0.2.0-linux-amd64
 sudo ./install.sh --plugins-dir /opt/cpa-manager-plus/cliproxyapi/plugins
 ```
 
@@ -35,6 +36,19 @@ plugins:
 ```
 
 重启 CLIProxyAPI 后，在 CPA Manager Plus 的认证页面发起 Cursor OAuth。浏览器登录和授权必须由 Cursor 账号本人完成。凭据由 CLIProxyAPI 的认证目录保存，插件不会把 token 写入自身配置。
+
+## Cursor 管理
+
+插件启用后会通过 CLIProxyAPI 的原生插件资源机制注册“Cursor 管理”菜单，不需要修改 CPA Manager Plus 页面。管理页提供：
+
+- Cursor OAuth 账户状态和实时可用模型；
+- 每个账户的模型禁用选择器；
+- 插件进程启动后的本地估算 Token 与请求计数；
+- 明确的订阅额度不可用状态。
+
+模型禁用规则保存在对应 Cursor OAuth 认证 JSON 的 `disabled_models` 字段中。插件会同时在模型发现和请求执行阶段应用规则，刷新 OAuth token 时也会保留规则。
+
+插件浏览器资源按 CLIProxyAPI 设计是未认证的静态入口，因此页面不会直接暴露账户数据；读取状态或保存规则时需要输入 CLIProxyAPI 管理密钥。密钥只保留在当前页面内存中，不写入浏览器存储。
 
 ## 调用
 
@@ -63,7 +77,8 @@ sudo ./uninstall.sh --plugins-dir /opt/cpa-manager-plus/cliproxyapi/plugins
 
 - 支持 OpenAI `chat-completions` 文本消息、非流式和流式响应。
 - 暂不支持 tools、图片和 Responses API；这些请求返回明确的客户端错误。
-- token usage 为本地估算值，不代表 Cursor 账单或订阅额度。
+- Cursor 没有公开、稳定的 OAuth 订阅剩余额度接口；管理页不会伪造百分比或余额。
+- token usage 为插件运行期内的本地估算值，不代表 Cursor 账单或订阅额度，进程重启后重新计数。
 - 当前发布包只提供 Linux amd64；其他平台需要对应平台的 CGO 工具链重新构建。
 
 CLIProxyAPI 动态库插件是进程内受信代码。请只安装来自可信来源且校验过 `SHA256SUMS` 的构建。使用时应遵守 Cursor 的服务条款和可接受使用政策，不应共享账号、转售访问或规避配额与安全控制。

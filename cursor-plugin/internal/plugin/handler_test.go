@@ -27,8 +27,23 @@ func Test_Handler_Register_declares_cursor_auth_models_and_executor(t *testing.T
 	require.Contains(t, string(response.Result), `"auth_provider":true`)
 	require.Contains(t, string(response.Result), `"model_provider":true`)
 	require.Contains(t, string(response.Result), `"executor":true`)
-	require.Contains(t, string(response.Result), `"Version":"0.1.0"`)
+	require.Contains(t, string(response.Result), `"management_api":true`)
+	require.Contains(t, string(response.Result), `"usage_plugin":true`)
+	require.Contains(t, string(response.Result), `"Version":"0.2.0"`)
 	require.Contains(t, string(response.Result), `"GitHubRepository":"https://github.com/yobo2u/omsub/tree/cursor/cursor-plugin"`)
+}
+
+func Test_Handler_ManagementRegister_exposes_cursor_management_resource_and_authenticated_routes(t *testing.T) {
+	handler := NewHandler(Dependencies{})
+
+	raw := handler.Call(context.Background(), "management.register", nil)
+
+	var response envelope
+	require.NoError(t, json.Unmarshal(raw, &response))
+	require.True(t, response.OK)
+	require.Contains(t, string(response.Result), `"Path":"/status"`)
+	require.Contains(t, string(response.Result), `"Path":"/plugins/cursor/status"`)
+	require.Contains(t, string(response.Result), `"Path":"/plugins/cursor/disabled-models"`)
 }
 
 func Test_Handler_ExecuteStream_emits_openai_chunks_and_closes(t *testing.T) {
@@ -80,6 +95,31 @@ func Test_Handler_Execute_returns_bad_request_for_unsupported_tools(t *testing.T
 	require.NoError(t, json.Unmarshal(raw, &response))
 	require.False(t, response.OK)
 	require.Equal(t, 400, response.Error.HTTPStatus)
+}
+
+func Test_Handler_Execute_rejects_model_disabled_by_cursor_plugin(t *testing.T) {
+	handler := NewHandler(Dependencies{Cursor: fakeCursorClient{}})
+	credentials, err := cursorauth.MarshalCredentials(cursorauth.Credentials{
+		AccessToken:    "access",
+		RefreshToken:   "refresh",
+		Type:           "cursor",
+		DisabledModels: []string{"gpt-5"},
+	})
+	require.NoError(t, err)
+	request := executorRequest{
+		StorageJSON: credentials,
+		Payload:     []byte(`{"model":"cursor/gpt-5","messages":[{"role":"user","content":"hello"}]}`),
+	}
+	rawRequest, err := json.Marshal(request)
+	require.NoError(t, err)
+
+	raw := handler.Call(context.Background(), "executor.execute", rawRequest)
+
+	var response envelope
+	require.NoError(t, json.Unmarshal(raw, &response))
+	require.False(t, response.OK)
+	require.Equal(t, 400, response.Error.HTTPStatus)
+	require.Contains(t, response.Error.Message, "disabled")
 }
 
 type fakeCursorClient struct{}

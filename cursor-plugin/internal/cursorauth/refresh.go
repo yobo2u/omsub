@@ -36,5 +36,10 @@ func (service *Service) Refresh(ctx context.Context, current Credentials) (Crede
 	if tokens.RefreshToken == "" {
 		tokens.RefreshToken = current.RefreshToken
 	}
-	return credentialsFromTokens(tokens.AccessToken, tokens.RefreshToken, service.now())
+	refreshed, err := credentialsFromTokens(tokens.AccessToken, tokens.RefreshToken, service.now())
+	if err != nil {
+		return Credentials{}, err
+	}
+	refreshed.DisabledModels = append([]string(nil), current.DisabledModels...)
+	return refreshed, nil
 }

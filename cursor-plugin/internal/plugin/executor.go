@@ -119,6 +119,11 @@ func decodeExecution(raw []byte) (executorRequest, openai.ChatRequest, cursoraut
 	if err != nil {
 		return executorRequest{}, openai.ChatRequest{}, cursorauth.Credentials{}, err
 	}
+	if _, disabled := normalizedModelSet(credentials.DisabledModels)[chat.Model]; disabled {
+		return executorRequest{}, openai.ChatRequest{}, cursorauth.Credentials{}, &openai.InvalidRequestError{
+			Message: fmt.Sprintf("Cursor model %q is disabled by plugin configuration", chat.Model),
+		}
+	}
 	return request, chat, credentials, nil
 }
 

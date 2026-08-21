@@ -26,7 +26,28 @@ func (handler *Handler) modelsForAuth(ctx context.Context, raw []byte) (any, err
 	if err != nil {
 		return nil, err
 	}
-	return modelResponse(models), nil
+	return modelResponse(filterDisabledModels(models, credentials.DisabledModels)), nil
+}
+
+func filterDisabledModels(models, disabled []string) []string {
+	if len(disabled) == 0 {
+		return append([]string(nil), models...)
+	}
+	blocked := make(map[string]struct{}, len(disabled))
+	for _, id := range disabled {
+		normalized := strings.TrimPrefix(strings.TrimSpace(id), "cursor/")
+		if normalized != "" {
+			blocked[normalized] = struct{}{}
+		}
+	}
+	filtered := make([]string, 0, len(models))
+	for _, id := range models {
+		normalized := strings.TrimPrefix(strings.TrimSpace(id), "cursor/")
+		if _, found := blocked[normalized]; !found && normalized != "" {
+			filtered = append(filtered, normalized)
+		}
+	}
+	return filtered
 }
 
 func modelResponse(ids []string) any {

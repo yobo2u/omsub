@@ -67,7 +67,7 @@ import (
 
 const abiVersion uint32 = 1
 
-var handler = plugin.NewHandler(plugin.Dependencies{Emitter: cStreamEmitter{}})
+var handler = plugin.NewHandler(plugin.Dependencies{Emitter: cStreamEmitter{}, Host: cHostCaller{}})
 
 func main() {}
 
@@ -119,6 +119,12 @@ func cliproxyPluginShutdown() {}
 
 type cStreamEmitter struct{}
 
+type cHostCaller struct{}
+
+func (cHostCaller) Call(ctx context.Context, method string, requestValue any) (json.RawMessage, error) {
+	return callHostRaw(ctx, method, requestValue)
+}
+
 func (cStreamEmitter) Emit(ctx context.Context, streamID string, payload []byte) error {
 	request := struct {
 		StreamID string `json:"stream_id"`
@@ -139,12 +145,17 @@ func (cStreamEmitter) Close(streamID string, streamErr error) error {
 }
 
 func callHost(ctx context.Context, method string, requestValue any) error {
+	_, err := callHostRaw(ctx, method, requestValue)
+	return err
+}
+
+func callHostRaw(ctx context.Context, method string, requestValue any) (json.RawMessage, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return nil, err
 	}
 	raw, err := json.Marshal(requestValue)
 	if err != nil {
-		return fmt.Errorf("encode host callback: %w", err)
+		return nil, fmt.Errorf("encode host callback: %w", err)
 	}
 	cMethod := C.CString(method)
 	defer C.free(unsafe.Pointer(cMethod))
@@ -152,29 +163,30 @@ func callHost(ctx context.Context, method string, requestValue any) error {
 	defer C.free(request)
 	var response C.cliproxy_buffer
 	if code := C.call_host_api(cMethod, (*C.uint8_t)(request), C.size_t(len(raw)), &response); code != 0 {
-		return fmt.Errorf("host callback %s returned %d", method, code)
+		return nil, fmt.Errorf("host callback %s returned %d", method, code)
 	}
 	if response.ptr == nil {
-		return errors.New("host callback returned no response")
+		return nil, errors.New("host callback returned no response")
 	}
 	defer C.free_host_buffer(response.ptr, response.len)
 	responseRaw := C.GoBytes(response.ptr, C.int(response.len))
 	var envelope struct {
-		OK    bool `json:"ok"`
-		Error *struct {
+		OK     bool            `json:"ok"`
+		Result json.RawMessage `json:"result"`
+		Error  *struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(responseRaw, &envelope); err != nil {
-		return fmt.Errorf("decode host callback response: %w", err)
+		return nil, fmt.Errorf("decode host callback response: %w", err)
 	}
 	if !envelope.OK {
 		if envelope.Error != nil && envelope.Error.Message != "" {
-			return errors.New(envelope.Error.Message)
+			return nil, errors.New(envelope.Error.Message)
 		}
-		return errors.New("host callback failed")
+		return nil, errors.New("host callback failed")
 	}
-	return nil
+	return append(json.RawMessage(nil), envelope.Result...), nil
 }
 
 func writeResponse(response *C.cliproxy_buffer, raw []byte) {

@@ -15,6 +15,8 @@ type Handler struct {
 	auth    *cursorauth.Service
 	cursor  CursorClient
 	emitter StreamEmitter
+	host    HostCaller
+	usage   *usageStore
 }
 
 func NewHandler(dependencies Dependencies) *Handler {
@@ -27,7 +29,10 @@ func NewHandler(dependencies Dependencies) *Handler {
 			dependencies.Cursor = client
 		}
 	}
-	return &Handler{auth: dependencies.Auth, cursor: dependencies.Cursor, emitter: dependencies.Emitter}
+	return &Handler{
+		auth: dependencies.Auth, cursor: dependencies.Cursor, emitter: dependencies.Emitter,
+		host: dependencies.Host, usage: newUsageStore(),
+	}
 }
 
 func (handler *Handler) Call(ctx context.Context, method string, request []byte) []byte {
@@ -59,6 +64,12 @@ func (handler *Handler) dispatch(ctx context.Context, method string, request []b
 	switch method {
 	case "plugin.register", "plugin.reconfigure":
 		return registration(), nil
+	case "management.register":
+		return managementRegistration(), nil
+	case "management.handle":
+		return handler.handleManagement(ctx, request)
+	case "usage.handle":
+		return handler.handleUsage(request)
 	case "auth.identifier", "executor.identifier":
 		return map[string]string{"identifier": "cursor"}, nil
 	case "auth.parse":
@@ -91,7 +102,7 @@ func registration() map[string]any {
 		"schema_version": 3,
 		"metadata": map[string]any{
 			"Name":             "cursor",
-			"Version":          "0.1.0",
+			"Version":          "0.2.0",
 			"Author":           "yobo",
 			"GitHubRepository": "https://github.com/yobo2u/omsub/tree/cursor/cursor-plugin",
 			"Logo":             "",
@@ -100,6 +111,8 @@ func registration() map[string]any {
 		"capabilities": map[string]any{
 			"auth_provider":           true,
 			"model_provider":          true,
+			"management_api":          true,
+			"usage_plugin":            true,
 			"executor":                true,
 			"executor_model_scope":    "oauth",
 			"executor_input_formats":  []string{"chat-completions"},
