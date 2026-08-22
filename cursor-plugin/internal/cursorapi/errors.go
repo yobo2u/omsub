@@ -14,8 +14,7 @@ type connectEndStreamResponse struct {
 }
 
 type connectWireError struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code string `json:"code"`
 }
 
 func IsInvalidArgument(err error) bool {
@@ -43,19 +42,15 @@ func connectEndStreamError(payload []byte) error {
 	if response.Error == nil {
 		return nil
 	}
-	code := strings.TrimSpace(response.Error.Code)
-	message := strings.TrimSpace(response.Error.Message)
-	if strings.EqualFold(code, "invalid_argument") {
-		return fmt.Errorf("%w: %s", ErrInvalidArgument, message)
-	}
-	if code == "" && message == "" {
+	code := strings.ToLower(strings.TrimSpace(response.Error.Code))
+	switch code {
+	case "invalid_argument":
+		return fmt.Errorf("%w: Cursor rejected the request", ErrInvalidArgument)
+	case "canceled", "unknown", "deadline_exceeded", "not_found", "already_exists", "permission_denied",
+		"resource_exhausted", "failed_precondition", "aborted", "out_of_range", "unimplemented", "internal",
+		"unavailable", "data_loss", "unauthenticated":
+		return fmt.Errorf("Cursor stream failed: %s", code)
+	default:
 		return errors.New("Cursor stream failed")
 	}
-	if code == "" {
-		return fmt.Errorf("Cursor stream failed: %s", message)
-	}
-	if message == "" {
-		return fmt.Errorf("Cursor stream failed: %s", code)
-	}
-	return fmt.Errorf("Cursor stream failed: %s: %s", code, message)
 }

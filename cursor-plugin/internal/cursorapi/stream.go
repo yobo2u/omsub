@@ -83,7 +83,13 @@ func (state *streamState) handleFrame(
 	drainDelay time.Duration,
 ) (bool, error) {
 	if frame.Flags == connectEndStreamFlag {
-		return true, connectEndStreamError(frame.Payload)
+		if err := connectEndStreamError(frame.Payload); err != nil {
+			return false, err
+		}
+		if !state.terminal {
+			return false, errors.New("Cursor stream ended before turn end")
+		}
+		return true, nil
 	}
 	if frame.Flags != 0 {
 		return false, fmt.Errorf("Cursor stream ended with Connect flags %d", frame.Flags)
