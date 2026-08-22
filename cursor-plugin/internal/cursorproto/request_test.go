@@ -158,6 +158,33 @@ func Test_DecodeServerEvent_maps_completed_mcp_tool_call(t *testing.T) {
 	require.JSONEq(t, `{"path":"a.txt"}`, event.Arguments)
 }
 
+func Test_DecodeServerEvent_maps_exec_mcp_args_to_tool_call(t *testing.T) {
+	server, err := newMessage("AgentServerMessage")
+	require.NoError(t, err)
+	execMessage, err := nestedMessage(server, "exec_server_message")
+	require.NoError(t, err)
+	execMessage.Set(field(execMessage, "id"), protoreflect.ValueOfUint32(7))
+	args, err := nestedMessage(execMessage, "mcp_args")
+	require.NoError(t, err)
+	require.NoError(t, setString(args, "provider_identifier", "opencodex-responses"))
+	require.NoError(t, setString(args, "tool_name", "read_file"))
+	require.NoError(t, setString(args, "tool_call_id", "call_exec_1"))
+	argsMap := args.Mutable(field(args, "args")).Map()
+	argsMap.Set(protoreflect.ValueOfString("path").MapKey(), protoreflect.ValueOfBytes([]byte(`"probe.txt"`)))
+	require.NoError(t, setMessage(execMessage, "mcp_args", args))
+	require.NoError(t, setMessage(server, "exec_server_message", execMessage))
+	raw, err := proto.Marshal(server)
+	require.NoError(t, err)
+
+	event, err := DecodeServerEvent(raw)
+
+	require.NoError(t, err)
+	require.Equal(t, EventToolCall, event.Kind)
+	require.Equal(t, "call_exec_1", event.ID)
+	require.Equal(t, "read_file", event.Name)
+	require.JSONEq(t, `{"path":"probe.txt"}`, event.Arguments)
+}
+
 func encodeTestInteractionUpdate(updateName, valueName, value string) ([]byte, error) {
 	server, err := newMessage("AgentServerMessage")
 	if err != nil {

@@ -94,6 +94,31 @@ func Test_Client_Run_keeps_HTTP2_request_stream_open(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func Test_Client_Run_returns_after_exec_mcp_tool_call_without_turn_end(t *testing.T) {
+	transport := roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		_ = readConnectPayload(t, request.Body)
+		return responseWithBody(http.StatusOK, connectFrame(mcpExecServerMessage(7, "call_1", "read_file", "path", `"probe.txt"`))), nil
+	})
+	client, err := NewClient(Config{
+		BaseURL:    "https://api2.cursor.sh",
+		HTTPClient: &http.Client{Transport: transport},
+	})
+	require.NoError(t, err)
+	var events []cursorproto.ServerEvent
+
+	err = client.Run(context.Background(), RunInput{AccessToken: "token", Model: "default", Prompt: "read probe"}, func(event cursorproto.ServerEvent) error {
+		events = append(events, event)
+		return nil
+	})
+
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	require.Equal(t, cursorproto.EventToolCall, events[0].Kind)
+	require.Equal(t, "call_1", events[0].ID)
+	require.Equal(t, "read_file", events[0].Name)
+	require.JSONEq(t, `{"path":"probe.txt"}`, events[0].Arguments)
+}
+
 func Test_Client_Run_sends_heartbeat_before_response_headers(t *testing.T) {
 	// Given
 	server := httptest.NewUnstartedServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -236,6 +261,27 @@ func setBlobServerMessage(id uint64, blobID, blobData []byte) []byte {
 	kv = protowire.AppendBytes(kv, args)
 	server := protowire.AppendTag(nil, 4, protowire.BytesType)
 	return protowire.AppendBytes(server, kv)
+}
+
+func mcpExecServerMessage(id uint64, callID, name, argumentName, argumentValue string) []byte {
+	entry := protowire.AppendTag(nil, 1, protowire.BytesType)
+	entry = protowire.AppendString(entry, argumentName)
+	entry = protowire.AppendTag(entry, 2, protowire.BytesType)
+	entry = protowire.AppendBytes(entry, []byte(argumentValue))
+	args := protowire.AppendTag(nil, 2, protowire.BytesType)
+	args = protowire.AppendBytes(args, entry)
+	args = protowire.AppendTag(args, 3, protowire.BytesType)
+	args = protowire.AppendString(args, callID)
+	args = protowire.AppendTag(args, 4, protowire.BytesType)
+	args = protowire.AppendString(args, "opencodex-responses")
+	args = protowire.AppendTag(args, 5, protowire.BytesType)
+	args = protowire.AppendString(args, name)
+	execMessage := protowire.AppendTag(nil, 1, protowire.VarintType)
+	execMessage = protowire.AppendVarint(execMessage, id)
+	execMessage = protowire.AppendTag(execMessage, 11, protowire.BytesType)
+	execMessage = protowire.AppendBytes(execMessage, args)
+	server := protowire.AppendTag(nil, 2, protowire.BytesType)
+	return protowire.AppendBytes(server, execMessage)
 }
 
 func eventKinds(events []cursorproto.ServerEvent) []cursorproto.EventKind {

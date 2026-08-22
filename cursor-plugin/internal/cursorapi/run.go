@@ -153,6 +153,7 @@ func readRunStream(
 			if err != nil {
 				return err
 			}
+			toolCallSeen := false
 			for _, frame := range frames {
 				if frame.Flags != 0 {
 					return fmt.Errorf("Cursor stream ended with Connect flags %d", frame.Flags)
@@ -178,6 +179,10 @@ func readRunStream(
 				if event.Kind == cursorproto.EventDone {
 					return nil
 				}
+				toolCallSeen = toolCallSeen || event.Kind == cursorproto.EventToolCall
+			}
+			if toolCallSeen {
+				return nil
 			}
 		}
 		if errors.Is(readErr, io.EOF) {

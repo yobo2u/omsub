@@ -71,6 +71,7 @@ func (handler *Handler) runStream(parent context.Context, streamID string, chat 
 	defer cancel()
 	turn := openai.NewTurn("cursor/" + chat.Model)
 	done := false
+	toolCallSeen := false
 	runErr := handler.cursor.Run(ctx, cursorapi.RunInput{
 		AccessToken: credentials.AccessToken,
 		Model:       chat.Model,
@@ -102,13 +103,29 @@ func (handler *Handler) runStream(parent context.Context, streamID string, chat 
 			if err != nil {
 				return err
 			}
-			return handler.emitter.Emit(ctx, streamID, chunk)
+			if err := handler.emitter.Emit(ctx, streamID, chunk); err != nil {
+				return err
+			}
+			toolCallSeen = true
+			return nil
 		case cursorproto.EventIgnored, cursorproto.EventThinking, cursorproto.EventTokens:
 			return nil
 		default:
 			return nil
 		}
 	})
+	if runErr == nil && toolCallSeen && !done {
+		chunk, err := turn.FinalChunk(usageText(chat))
+		if err != nil {
+			runErr = err
+		} else if err = handler.emitter.Emit(ctx, streamID, chunk); err != nil {
+			runErr = err
+		} else if err = handler.emitter.Emit(ctx, streamID, []byte("[DONE]")); err != nil {
+			runErr = err
+		} else {
+			done = true
+		}
+	}
 	if runErr == nil && !done {
 		runErr = errors.New("Cursor stream completed without turn end")
 	}

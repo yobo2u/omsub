@@ -29,7 +29,7 @@ func Test_Handler_Register_declares_cursor_auth_models_and_executor(t *testing.T
 	require.Contains(t, string(response.Result), `"executor":true`)
 	require.Contains(t, string(response.Result), `"management_api":true`)
 	require.Contains(t, string(response.Result), `"usage_plugin":true`)
-	require.Contains(t, string(response.Result), `"Version":"0.5.0"`)
+	require.Contains(t, string(response.Result), `"Version":"0.5.1"`)
 	require.Contains(t, string(response.Result), `"GitHubRepository":"https://github.com/yobo2u/omsub"`)
 }
 
@@ -176,12 +176,9 @@ type toolCursorClient struct {
 
 func (client *toolCursorClient) Run(_ context.Context, input cursorapi.RunInput, emit func(cursorproto.ServerEvent) error) error {
 	client.input = input
-	if err := emit(cursorproto.ServerEvent{
+	return emit(cursorproto.ServerEvent{
 		Kind: cursorproto.EventToolCall, ID: "call_1", Name: "read_file", Arguments: `{"path":"a.txt"}`,
-	}); err != nil {
-		return err
-	}
-	return emit(cursorproto.ServerEvent{Kind: cursorproto.EventDone})
+	})
 }
 
 func (*toolCursorClient) DiscoverModels(context.Context, string) ([]string, error) {

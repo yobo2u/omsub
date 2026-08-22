@@ -42,6 +42,13 @@ func DecodeServerEvent(raw []byte) (ServerEvent, error) {
 	if active == nil {
 		return ServerEvent{Kind: EventIgnored, Type: "empty"}, nil
 	}
+	if active.Name() == "exec_server_message" {
+		execField, err := requireField(server, "exec_server_message")
+		if err != nil {
+			return ServerEvent{}, err
+		}
+		return decodeExecServerMessage(server.Get(execField).Message())
+	}
 	if active.Name() != "interaction_update" {
 		return ServerEvent{Kind: EventIgnored, Type: string(active.Name())}, nil
 	}
@@ -53,6 +60,43 @@ func DecodeServerEvent(raw []byte) (ServerEvent, error) {
 		return ServerEvent{Kind: EventIgnored, Type: "interaction_update"}, nil
 	}
 	return decodeInteraction(server.Get(interactionField).Message())
+}
+
+func decodeExecServerMessage(execMessage protoreflect.Message) (ServerEvent, error) {
+	active := execMessage.WhichOneof(execMessage.Descriptor().Oneofs().ByName("message"))
+	if active == nil || active.Name() != "mcp_args" {
+		return ServerEvent{Kind: EventIgnored, Type: "exec_server_message"}, nil
+	}
+	argsField, err := requireField(execMessage, "mcp_args")
+	if err != nil {
+		return ServerEvent{}, err
+	}
+	args := execMessage.Get(argsField).Message()
+	providerField, err := requireField(args, "provider_identifier")
+	if err != nil {
+		return ServerEvent{}, err
+	}
+	if args.Get(providerField).String() != toolProvider {
+		return ServerEvent{Kind: EventIgnored, Type: "exec_server_message.mcp_args"}, nil
+	}
+	name := args.Get(field(args, "tool_name")).String()
+	if name == "" {
+		name = args.Get(field(args, "name")).String()
+	}
+	callID := args.Get(field(args, "tool_call_id")).String()
+	if callID == "" {
+		callID = fmt.Sprintf("exec_%d", execMessage.Get(field(execMessage, "id")).Uint())
+	}
+	arguments, err := decodeToolArguments(args)
+	if err != nil {
+		return ServerEvent{}, err
+	}
+	if name == "" {
+		return ServerEvent{}, fmt.Errorf("Cursor MCP exec requires a tool name")
+	}
+	return ServerEvent{
+		Kind: EventToolCall, Type: "exec_server_message.mcp_args", ID: callID, Name: name, Arguments: arguments,
+	}, nil
 }
 
 func decodeInteraction(interaction protoreflect.Message) (ServerEvent, error) {
