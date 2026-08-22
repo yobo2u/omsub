@@ -15,6 +15,8 @@ type bodyRead struct {
 	err  error
 }
 
+const connectEndStreamFlag byte = 0x02
+
 type streamState struct {
 	result   RunResult
 	started  time.Time
@@ -80,6 +82,9 @@ func (state *streamState) handleFrame(
 	watchdogs *runWatchdogs,
 	drainDelay time.Duration,
 ) (bool, error) {
+	if frame.Flags == connectEndStreamFlag {
+		return true, connectEndStreamError(frame.Payload)
+	}
 	if frame.Flags != 0 {
 		return false, fmt.Errorf("Cursor stream ended with Connect flags %d", frame.Flags)
 	}

@@ -29,7 +29,7 @@ func Test_Handler_Register_declares_cursor_auth_models_and_executor(t *testing.T
 	require.Contains(t, string(response.Result), `"executor":true`)
 	require.Contains(t, string(response.Result), `"management_api":true`)
 	require.Contains(t, string(response.Result), `"usage_plugin":true`)
-	require.Contains(t, string(response.Result), `"Version":"0.5.5"`)
+	require.Contains(t, string(response.Result), `"Version":"0.5.6"`)
 	require.Contains(t, string(response.Result), `"GitHubRepository":"https://github.com/yobo2u/omsub"`)
 }
 
