@@ -24,7 +24,7 @@
 当前商店发布物仅支持 Linux amd64：
 
 ```text
-cursor_0.5.1_linux_amd64.zip
+cursor_0.5.2_linux_amd64.zip
 checksums.txt
 ```
 
@@ -33,8 +33,8 @@ checksums.txt
 解压发布包，然后把 `--plugins-dir` 指向 CLIProxyAPI 配置中的 `plugins.dir`：
 
 ```sh
-tar -xzf cursor-plugin-0.5.1-linux-amd64.tar.gz
-cd cursor-plugin-0.5.1-linux-amd64
+tar -xzf cursor-plugin-0.5.2-linux-amd64.tar.gz
+cd cursor-plugin-0.5.2-linux-amd64
 sudo ./install.sh --plugins-dir /opt/cpa-manager-plus/cliproxyapi/plugins
 ```
 

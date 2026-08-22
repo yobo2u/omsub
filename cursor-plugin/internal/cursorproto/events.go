@@ -6,6 +6,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type EventKind string
@@ -192,11 +193,7 @@ func decodeToolArguments(args protoreflect.Message) (string, error) {
 	}
 	decoded := make(map[string]any)
 	args.Get(descriptor).Map().Range(func(key protoreflect.MapKey, value protoreflect.Value) bool {
-		var item any
-		if err := json.Unmarshal(value.Bytes(), &item); err != nil {
-			item = string(value.Bytes())
-		}
-		decoded[key.String()] = item
+		decoded[key.String()] = decodeToolArgument(value.Bytes())
 		return true
 	})
 	raw, err := json.Marshal(decoded)
@@ -204,6 +201,25 @@ func decodeToolArguments(args protoreflect.Message) (string, error) {
 		return "", fmt.Errorf("encode Cursor tool arguments: %w", err)
 	}
 	return string(raw), nil
+}
+
+func decodeToolArgument(raw []byte) any {
+	var value structpb.Value
+	if err := proto.Unmarshal(raw, &value); err == nil && value.Kind != nil && len(value.ProtoReflect().GetUnknown()) == 0 {
+		decoded := value.AsInterface()
+		if text, ok := decoded.(string); ok {
+			var parsed any
+			if json.Unmarshal([]byte(text), &parsed) == nil {
+				return parsed
+			}
+		}
+		return decoded
+	}
+	var decoded any
+	if json.Unmarshal(raw, &decoded) == nil {
+		return decoded
+	}
+	return string(raw)
 }
 
 func stringEvent(kind EventKind, message protoreflect.Message) (ServerEvent, error) {

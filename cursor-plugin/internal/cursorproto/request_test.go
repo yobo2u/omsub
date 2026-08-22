@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func Test_EncodeRunRequest_places_model_and_prompt_in_wire_message(t *testing.T) {
@@ -169,8 +170,10 @@ func Test_DecodeServerEvent_maps_exec_mcp_args_to_tool_call(t *testing.T) {
 	require.NoError(t, setString(args, "provider_identifier", "opencodex-responses"))
 	require.NoError(t, setString(args, "tool_name", "read_file"))
 	require.NoError(t, setString(args, "tool_call_id", "call_exec_1"))
+	pathValue, err := proto.Marshal(structpb.NewStringValue("probe.txt"))
+	require.NoError(t, err)
 	argsMap := args.Mutable(field(args, "args")).Map()
-	argsMap.Set(protoreflect.ValueOfString("path").MapKey(), protoreflect.ValueOfBytes([]byte(`"probe.txt"`)))
+	argsMap.Set(protoreflect.ValueOfString("path").MapKey(), protoreflect.ValueOfBytes(pathValue))
 	require.NoError(t, setMessage(execMessage, "mcp_args", args))
 	require.NoError(t, setMessage(server, "exec_server_message", execMessage))
 	raw, err := proto.Marshal(server)

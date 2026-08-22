@@ -4,14 +4,14 @@
 
 ## 获取与安装
 
-- [GitHub Releases](https://github.com/yobo2u/omsub/releases/tag/v0.5.1)
-- [Linux amd64 发布包](https://github.com/yobo2u/omsub/releases/download/v0.5.1/cursor-plugin-0.5.1-linux-amd64.tar.gz)
+- [GitHub Releases](https://github.com/yobo2u/omsub/releases/tag/v0.5.2)
+- [Linux amd64 发布包](https://github.com/yobo2u/omsub/releases/download/v0.5.2/cursor-plugin-0.5.2-linux-amd64.tar.gz)
 - [安装和调用说明](cursor-plugin/README.md)
 - [免责声明](cursor-plugin/DISCLAIMER.md)
 - [第三方来源说明](cursor-plugin/THIRD_PARTY_NOTICES.md)
 
 GitHub Release 同时提供符合 CLIProxyAPI 官方插件商店格式的
-`cursor_0.5.1_linux_amd64.zip` 和 `checksums.txt`。ZIP 根目录只包含
+`cursor_0.5.2_linux_amd64.zip` 和 `checksums.txt`。ZIP 根目录只包含
 `cursor.so`；TAR 包继续用于手动安装。
 发布物校验值见同一 Release 中的 `checksums.txt`。
 

@@ -97,7 +97,7 @@ func Test_Client_Run_keeps_HTTP2_request_stream_open(t *testing.T) {
 func Test_Client_Run_returns_after_exec_mcp_tool_call_without_turn_end(t *testing.T) {
 	transport := roundTripperFunc(func(request *http.Request) (*http.Response, error) {
 		_ = readConnectPayload(t, request.Body)
-		return responseWithBody(http.StatusOK, connectFrame(mcpExecServerMessage(7, "call_1", "read_file", "path", `"probe.txt"`))), nil
+		return responseWithBody(http.StatusOK, connectFrame(mcpExecServerMessage(7, "call_1", "read_file", "path", "probe.txt"))), nil
 	})
 	client, err := NewClient(Config{
 		BaseURL:    "https://api2.cursor.sh",
@@ -264,10 +264,12 @@ func setBlobServerMessage(id uint64, blobID, blobData []byte) []byte {
 }
 
 func mcpExecServerMessage(id uint64, callID, name, argumentName, argumentValue string) []byte {
+	encodedValue := protowire.AppendTag(nil, 3, protowire.BytesType)
+	encodedValue = protowire.AppendString(encodedValue, argumentValue)
 	entry := protowire.AppendTag(nil, 1, protowire.BytesType)
 	entry = protowire.AppendString(entry, argumentName)
 	entry = protowire.AppendTag(entry, 2, protowire.BytesType)
-	entry = protowire.AppendBytes(entry, []byte(argumentValue))
+	entry = protowire.AppendBytes(entry, encodedValue)
 	args := protowire.AppendTag(nil, 2, protowire.BytesType)
 	args = protowire.AppendBytes(args, entry)
 	args = protowire.AppendTag(args, 3, protowire.BytesType)
