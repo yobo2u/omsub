@@ -95,6 +95,28 @@ func Test_Fallback_EmptyCompletion_retries_fresh_when_checkpoint_suffix(t *testi
 	require.Equal(t, cursorproto.FullReplay, inputs[2].Mode)
 }
 
+func Test_Fallback_InternalStream_retries_fresh_when_checkpoint_suffix(t *testing.T) {
+	client := &recordingCursorClient{steps: []cursorRunStep{
+		successfulTextStep("seed-answer", "conversation", []byte("checkpoint-seed")),
+		{result: cursorapi.RunResult{ConversationID: "conversation"}, err: cursorapi.ErrInternalStream},
+		successfulTextStep("fallback-answer", "fresh-conversation", []byte("checkpoint-fresh")),
+	}}
+	handler := NewHandler(Dependencies{Cursor: client})
+	_, err := handler.execute(context.Background(), executorFixture(t, "session", "account", "auth", "auto", "", []map[string]any{textMessage("user", "seed")}))
+	require.NoError(t, err)
+	continuation := executorFixture(t, "session", "account", "auth", "auto", "", []map[string]any{
+		textMessage("user", "seed"), textMessage("assistant", "seed-answer"), textMessage("user", "next"),
+	})
+
+	_, err = handler.execute(context.Background(), continuation)
+
+	require.NoError(t, err)
+	inputs := client.Inputs()
+	require.Len(t, inputs, 3)
+	require.Equal(t, cursorproto.CheckpointSuffix, inputs[1].Mode)
+	require.Equal(t, cursorproto.FullReplay, inputs[2].Mode)
+}
+
 func Test_Fallback_InvalidArgument_does_not_retry_the_fresh_replay(t *testing.T) {
 	client := &recordingCursorClient{steps: []cursorRunStep{
 		successfulTextStep("seed-answer", "conversation", []byte("checkpoint-seed")),

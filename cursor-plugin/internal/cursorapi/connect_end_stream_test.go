@@ -100,3 +100,21 @@ func Test_Client_Run_redacts_connect_end_stream_error_details(t *testing.T) {
 	require.NotContains(t, err.Error(), "account@example.com")
 	require.NotContains(t, err.Error(), "bearer-secret")
 }
+
+func Test_Client_Run_marks_internal_end_stream_replayable_without_leaking_details(t *testing.T) {
+	// Given
+	endStream := connectFrame([]byte(`{"error":{"code":"internal","message":"account@example.com bearer-secret"}}`))
+	endStream[0] = 0x02
+	body := newChunkBody(endStream)
+	client := newTestClient(t, staticResponseTransport(body), Config{})
+
+	// When
+	_, err := client.Run(context.Background(), validRunInput(), func(cursorproto.ServerEvent) error { return nil })
+
+	// Then
+	require.ErrorIs(t, err, ErrInternalStream)
+	require.True(t, IsReplayableCheckpointError(err))
+	require.EqualError(t, err, "Cursor stream failed: internal")
+	require.NotContains(t, err.Error(), "account@example.com")
+	require.NotContains(t, err.Error(), "bearer-secret")
+}
