@@ -1,1 +1,1 @@
-48a77c40101031fe770685c50f82a5fa55fac4cdf0ef08d4cec9039d9865be43  cursor_0.5.6_linux_amd64.zip
+9d107649ae6e912bc7f4102fcb66d62157d71ecde998611c80d9ca56f26af93a  cursor_0.5.6_linux_amd64.zip
