@@ -21,6 +21,7 @@ type streamState struct {
 	result   RunResult
 	started  time.Time
 	terminal bool
+	textSeen bool
 	doneSent bool
 	drain    *time.Timer
 }
@@ -86,9 +87,18 @@ func (state *streamState) handleFrame(
 		if err := connectEndStreamError(frame.Payload); err != nil {
 			return false, err
 		}
-		if !state.terminal {
-			return false, errors.New("Cursor stream ended before turn end")
+		if state.terminal {
+			return true, nil
 		}
+		if !state.textSeen {
+			return false, ErrEmptyCompletion
+		}
+		if err := emit(cursorproto.ServerEvent{Kind: cursorproto.EventDone, Type: "connect_end_stream"}); err != nil {
+			return false, fmt.Errorf("emit Cursor event: %w", err)
+		}
+		state.terminal = true
+		state.doneSent = true
+		watchdogs.stop()
 		return true, nil
 	}
 	if frame.Flags != 0 {
@@ -131,6 +141,7 @@ func (state *streamState) handleFrame(
 	}
 	state.result.OutputExposed = state.result.OutputExposed || eventExposesOutput(event.Kind)
 	state.result.ToolExposed = state.result.ToolExposed || event.Kind == cursorproto.EventToolCall
+	state.textSeen = state.textSeen || event.Kind == cursorproto.EventText
 	if err := emit(event); err != nil {
 		return false, fmt.Errorf("emit Cursor event: %w", err)
 	}

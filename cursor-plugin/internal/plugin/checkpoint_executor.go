@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"cursorplugin/internal/cursorapi"
@@ -140,7 +141,8 @@ func shouldRetryFresh(
 	err error,
 	hasToolResult bool,
 ) bool {
-	return input.Mode == cursorproto.CheckpointSuffix && cursorapi.IsInvalidArgument(err) &&
+	retryable := cursorapi.IsInvalidArgument(err) || errors.Is(err, cursorapi.ErrEmptyCompletion)
+	return input.Mode == cursorproto.CheckpointSuffix && retryable &&
 		!result.OutputExposed && !result.ToolExposed && observation.text.Len() == 0 && !observation.toolCall && !hasToolResult
 }
 

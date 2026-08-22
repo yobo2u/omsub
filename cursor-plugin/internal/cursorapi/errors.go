@@ -7,7 +7,10 @@ import (
 	"strings"
 )
 
-var ErrInvalidArgument = errors.New("Cursor invalid argument")
+var (
+	ErrInvalidArgument = errors.New("Cursor invalid argument")
+	ErrEmptyCompletion = errors.New("Cursor stream completed without output")
+)
 
 type connectEndStreamResponse struct {
 	Error *connectWireError `json:"error"`

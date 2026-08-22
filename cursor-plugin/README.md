@@ -24,7 +24,7 @@
 当前商店发布物仅支持 Linux amd64：
 
 ```text
-cursor_0.5.6_linux_amd64.zip
+cursor_0.5.7_linux_amd64.zip
 checksums.txt
 ```
 
@@ -33,8 +33,8 @@ checksums.txt
 解压发布包，然后把 `--plugins-dir` 指向 CLIProxyAPI 配置中的 `plugins.dir`：
 
 ```sh
-tar -xzf cursor-plugin-0.5.6-linux-amd64.tar.gz
-cd cursor-plugin-0.5.6-linux-amd64
+tar -xzf cursor-plugin-0.5.7-linux-amd64.tar.gz
+cd cursor-plugin-0.5.7-linux-amd64
 sudo ./install.sh --plugins-dir /opt/cpa-manager-plus/cliproxyapi/plugins
 ```
 
@@ -98,7 +98,7 @@ sudo ./uninstall.sh --plugins-dir /opt/cpa-manager-plus/cliproxyapi/plugins
 - 支持标准 function tools、`tool_choice`、多工具调用、assistant `tool_calls` 历史和 tool 结果续轮；工具目录通过 Cursor 原生 `mcp_tools` 注册，结果转换为 OpenAI 兼容 `tool_calls`。
 - 支持 `image_url` / `input_image` 内联 data URL，以及 `file` / `input_file` 的图片或 UTF-8 文本附件；图片和文件通过 Cursor 原生 `selected_context` 发送，tool 结果中的图片也能随续轮送达。
 - 为避免服务端请求伪造，远程图片 URL 不由插件下载；调用方应传内联 data URL。仅有 `file_id` 而没有 `file_data` 的附件无法由独立插件解析。
-- v0.5.6 的会话检查点仅在插件进程内保存，并按账户、模型和会话严格隔离。仅追加式线性历史会尝试续传；分支、编辑、压缩、过期、重启或状态异常时会安全回退为完整重放。
+- v0.5.7 的会话检查点仅在插件进程内保存，并按账户、模型和会话严格隔离。仅追加式线性历史会尝试续传；分支、编辑、压缩、过期、重启或状态异常时会安全回退为完整重放；上游返回无输出的干净 EndStream 时会安全重试一次完整重放。
 - 检查点的上限为 15 分钟 TTL、64 条和 16 MiB；进程重启后不保留。原始检查点、凭据和管理密钥不会写入浏览器存储、宿主 metadata、日志或发布证据。
 - 暂不直接实现 Responses API；CLIProxyAPI 可按其 executor 翻译能力把其他协议转换到插件声明的 `chat-completions` 输入输出格式。
 - Cursor 没有公开、稳定的 OAuth 订阅剩余额度接口；管理页不会伪造百分比或余额。
