@@ -29,7 +29,7 @@ func Test_Handler_Register_declares_cursor_auth_models_and_executor(t *testing.T
 	require.Contains(t, string(response.Result), `"executor":true`)
 	require.Contains(t, string(response.Result), `"management_api":true`)
 	require.Contains(t, string(response.Result), `"usage_plugin":true`)
-	require.Contains(t, string(response.Result), `"Version":"0.5.2"`)
+	require.Contains(t, string(response.Result), `"Version":"0.5.5"`)
 	require.Contains(t, string(response.Result), `"GitHubRepository":"https://github.com/yobo2u/omsub"`)
 }
 
@@ -163,22 +163,23 @@ func Test_Handler_Execute_rejects_model_disabled_by_cursor_plugin(t *testing.T) 
 
 type fakeCursorClient struct{}
 
-func (fakeCursorClient) Run(_ context.Context, _ cursorapi.RunInput, emit func(cursorproto.ServerEvent) error) error {
+func (fakeCursorClient) Run(_ context.Context, _ cursorapi.RunInput, emit func(cursorproto.ServerEvent) error) (cursorapi.RunResult, error) {
 	if err := emit(cursorproto.ServerEvent{Kind: cursorproto.EventText, Text: "cursor-plugin-ok"}); err != nil {
-		return err
+		return cursorapi.RunResult{OutputExposed: true}, err
 	}
-	return emit(cursorproto.ServerEvent{Kind: cursorproto.EventDone})
+	return cursorapi.RunResult{OutputExposed: true}, emit(cursorproto.ServerEvent{Kind: cursorproto.EventDone})
 }
 
 type toolCursorClient struct {
 	input cursorapi.RunInput
 }
 
-func (client *toolCursorClient) Run(_ context.Context, input cursorapi.RunInput, emit func(cursorproto.ServerEvent) error) error {
+func (client *toolCursorClient) Run(_ context.Context, input cursorapi.RunInput, emit func(cursorproto.ServerEvent) error) (cursorapi.RunResult, error) {
 	client.input = input
-	return emit(cursorproto.ServerEvent{
+	err := emit(cursorproto.ServerEvent{
 		Kind: cursorproto.EventToolCall, ID: "call_1", Name: "read_file", Arguments: `{"path":"a.txt"}`,
 	})
+	return cursorapi.RunResult{ToolExposed: true}, err
 }
 
 func (*toolCursorClient) DiscoverModels(context.Context, string) ([]string, error) {

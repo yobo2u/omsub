@@ -9,7 +9,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"cursorplugin/internal/cursorapi"
 	"cursorplugin/internal/cursorauth"
 	"cursorplugin/internal/cursorproto"
 	"cursorplugin/internal/openai"
@@ -24,15 +23,7 @@ func (handler *Handler) execute(ctx context.Context, raw []byte) (any, error) {
 		return nil, errors.New("Cursor client is unavailable")
 	}
 	turn := openai.NewTurn("cursor/" + chat.Model)
-	err = handler.cursor.Run(ctx, cursorapi.RunInput{
-		AccessToken: credentials.AccessToken,
-		Model:       chat.Model,
-		System:      chat.System,
-		Prompt:      chat.Prompt,
-		Tools:       cursorTools(chat.Tools),
-		Images:      cursorImages(chat.Images),
-		Attachments: cursorAttachments(chat.Attachments),
-	}, func(event cursorproto.ServerEvent) error {
+	_, err = handler.runCheckpointed(ctx, request, chat, credentials, func(event cursorproto.ServerEvent) error {
 		switch event.Kind {
 		case cursorproto.EventText:
 			turn.AddText(event.Text)
@@ -48,7 +39,6 @@ func (handler *Handler) execute(ctx context.Context, raw []byte) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	_ = request
 	return executorResponse{Payload: payload, Headers: http.Header{"content-type": []string{"application/json"}}}, nil
 }
 
@@ -60,50 +50,42 @@ func (handler *Handler) executeStream(ctx context.Context, raw []byte) (any, err
 	if handler.cursor == nil || handler.emitter == nil || request.StreamID == "" {
 		return nil, errors.New("Cursor stream bridge is unavailable")
 	}
-	go handler.runStream(ctx, request.StreamID, chat, credentials)
+	go handler.runStream(ctx, request, chat, credentials)
 	return struct {
 		Headers http.Header `json:"headers"`
 	}{Headers: http.Header{"content-type": []string{"text/event-stream"}}}, nil
 }
 
-func (handler *Handler) runStream(parent context.Context, streamID string, chat openai.ChatRequest, credentials cursorauth.Credentials) {
+func (handler *Handler) runStream(parent context.Context, request executorRequest, chat openai.ChatRequest, credentials cursorauth.Credentials) {
 	ctx, cancel := context.WithTimeout(parent, 15*time.Minute)
 	defer cancel()
 	turn := openai.NewTurn("cursor/" + chat.Model)
 	done := false
 	toolCallSeen := false
-	runErr := handler.cursor.Run(ctx, cursorapi.RunInput{
-		AccessToken: credentials.AccessToken,
-		Model:       chat.Model,
-		System:      chat.System,
-		Prompt:      chat.Prompt,
-		Tools:       cursorTools(chat.Tools),
-		Images:      cursorImages(chat.Images),
-		Attachments: cursorAttachments(chat.Attachments),
-	}, func(event cursorproto.ServerEvent) error {
+	_, runErr := handler.runCheckpointed(ctx, request, chat, credentials, func(event cursorproto.ServerEvent) error {
 		switch event.Kind {
 		case cursorproto.EventText:
 			chunk, err := turn.StreamChunk(event.Text)
 			if err != nil {
 				return err
 			}
-			return handler.emitter.Emit(ctx, streamID, chunk)
+			return handler.emitter.Emit(ctx, request.StreamID, chunk)
 		case cursorproto.EventDone:
 			done = true
 			chunk, err := turn.FinalChunk(usageText(chat))
 			if err != nil {
 				return err
 			}
-			if err := handler.emitter.Emit(ctx, streamID, chunk); err != nil {
+			if err := handler.emitter.Emit(ctx, request.StreamID, chunk); err != nil {
 				return err
 			}
-			return handler.emitter.Emit(ctx, streamID, []byte("[DONE]"))
+			return handler.emitter.Emit(ctx, request.StreamID, []byte("[DONE]"))
 		case cursorproto.EventToolCall:
 			chunk, err := turn.StreamToolCall(event.ID, event.Name, event.Arguments)
 			if err != nil {
 				return err
 			}
-			if err := handler.emitter.Emit(ctx, streamID, chunk); err != nil {
+			if err := handler.emitter.Emit(ctx, request.StreamID, chunk); err != nil {
 				return err
 			}
 			toolCallSeen = true
@@ -118,9 +100,9 @@ func (handler *Handler) runStream(parent context.Context, streamID string, chat 
 		chunk, err := turn.FinalChunk(usageText(chat))
 		if err != nil {
 			runErr = err
-		} else if err = handler.emitter.Emit(ctx, streamID, chunk); err != nil {
+		} else if err = handler.emitter.Emit(ctx, request.StreamID, chunk); err != nil {
 			runErr = err
-		} else if err = handler.emitter.Emit(ctx, streamID, []byte("[DONE]")); err != nil {
+		} else if err = handler.emitter.Emit(ctx, request.StreamID, []byte("[DONE]")); err != nil {
 			runErr = err
 		} else {
 			done = true
@@ -129,7 +111,7 @@ func (handler *Handler) runStream(parent context.Context, streamID string, chat 
 	if runErr == nil && !done {
 		runErr = errors.New("Cursor stream completed without turn end")
 	}
-	if closeErr := handler.emitter.Close(streamID, runErr); closeErr != nil {
+	if closeErr := handler.emitter.Close(request.StreamID, runErr); closeErr != nil {
 		return
 	}
 }

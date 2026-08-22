@@ -71,9 +71,10 @@
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--canvas); color: var(--text); line-height: 1.55; }
     main { width: min(var(--content-width), calc(100% - var(--space-8))); margin: 0 auto; padding: var(--space-8) 0 var(--space-16); }
-    h1, h2 { margin: 0; letter-spacing: -.02em; }
+    h1, h2, h3 { margin: 0; letter-spacing: -.02em; }
     h1 { font-size: clamp(var(--font-title-min), 5vw, var(--font-title-max)); line-height: 1.15; }
     h2 { font-size: var(--font-section); }
+    h3 { font-size: var(--font-lg); }
     p { margin: var(--space-2) 0 0; }
     .muted { color: var(--muted); }
     .stack { display: grid; gap: var(--space-4); }
@@ -102,6 +103,8 @@
     .account-head { display: flex; justify-content: space-between; gap: var(--space-3); align-items: start; }
     .pill { display: inline-flex; align-self: start; width: max-content; padding: var(--space-1) var(--space-2); color: var(--success); background: var(--surface-muted); border-radius: var(--radius-pill); font-size: var(--font-xs); font-weight: var(--weight-action); }
     .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-2); margin-top: var(--space-4); }
+
+    .checkpoint-metrics { margin-top: var(--space-6); }
     .metric { padding: var(--space-3); border-radius: var(--radius-sm); background: var(--surface-muted); }
     .metric span { display: block; color: var(--muted); font-size: var(--font-xs); }
     .metric strong { display: block; margin-top: var(--space-1); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--font-lg); }
@@ -140,7 +143,7 @@
     </header>
     <section class="panel warning" aria-labelledby="quota-title">
       <h2 id="quota-title" data-i18n="quotaTitle">订阅额度说明</h2>
-      <p><span data-i18n="quotaBodyPrefix">Cursor 未公开稳定的 OAuth </span><span class="nowrap" data-i18n="quotaBodyTerm">订阅剩余额度接口</span><span data-i18n="quotaAccuracyPrefix">。这里不会伪造</span><span class="nowrap" data-i18n="quotaAccuracyTerm">百分比</span><span data-i18n="quotaUsagePrefix">；仅显示插件进程启动后的</span><span class="nowrap" data-i18n="quotaUsageTerm">本地估算用量</span><span data-i18n="quotaUsageJoin">与</span><span class="nowrap" data-i18n="quotaStatusTerm">请求状态</span><span data-i18n="quotaBodySuffix">。</span></p>
+      <p><span data-i18n="quotaBodyPrefix">Cursor 未公开稳定的 OAuth </span><span class="nowrap" data-i18n="quotaBodyTerm">订阅剩余额度接口</span><span data-i18n="quotaAccuracyPrefix">。这里不会伪造</span><span class="nowrap" data-i18n="quotaAccuracyTerm">百分比</span><span data-i18n="quotaUsagePrefix">；仅显示插件进程启动后的</span><span class="nowrap" data-i18n="quotaUsageTerm">本地估算用量</span><span data-i18n="quotaUsageJoin">与</span><span class="nowrap" data-i18n="quotaStatusTerm">请求状态</span><span data-i18n="quotaBodySuffixPrefix">。缓存 Token 未知时会明确显示</span><span class="nowrap" data-i18n="quotaUnknownTerm">“未知”</span><span data-i18n="quotaBodySuffixSuffix">。</span></p>
     </section>
     <section class="panel" aria-labelledby="credential-title">
       <div class="credential-grid">
@@ -179,7 +182,9 @@
           quotaUsageTerm: "本地估算用量",
           quotaUsageJoin: "与",
           quotaStatusTerm: "请求状态",
-          quotaBodySuffix: "。",
+          quotaBodySuffixPrefix: "。缓存 Token 未知时会明确显示",
+          quotaUnknownTerm: "“未知”",
+          quotaBodySuffixSuffix: "。",
           managementKeyLabel: "管理密钥",
           keyHelp: "只保留在当前页面内存中，不写入浏览器存储。",
           loadStatus: "加载状态",
@@ -189,9 +194,20 @@
           unexpectedError: "发生了未预期的错误。",
           quotaBalance: "订阅余额",
           unavailable: "不可用",
+          unknown: "未知",
           localEstimatedTokens: "本地估算 Token",
+          cachedTokens: "缓存 Token",
           successfulRequests: "成功请求",
           failedRequests: "失败请求",
+          checkpointMetrics: "检查点指标",
+          checkpointMetricsHelp: "仅汇总本插件进程内的命中、失效、回退、字节数和首 Token 延迟；不保存或显示会话标识、检查点或 Token 内容。",
+          checkpointHits: "检查点命中",
+          checkpointMisses: "检查点未命中",
+          checkpointInvalidations: "检查点失效",
+          checkpointFallbacks: "完整重放回退",
+          fullReplayBytes: "完整重放字节",
+          suffixBytes: "续传字节",
+          averageTTFT: "平均首 Token 延迟",
           savingSettings: "正在保存设置…",
           savedSettingsOne: "设置已保存，当前禁用 {count} 个模型。",
           savedSettingsMany: "设置已保存，当前禁用 {count} 个模型。",
@@ -229,7 +245,9 @@
           quotaUsageTerm: "local estimated usage",
           quotaUsageJoin: " and ",
           quotaStatusTerm: "request status",
-          quotaBodySuffix: " since the plugin process started.",
+          quotaBodySuffixPrefix: " since the plugin process started. Cached tokens are shown as ",
+          quotaUnknownTerm: "Unknown",
+          quotaBodySuffixSuffix: " when unavailable.",
           managementKeyLabel: "management key",
           keyHelp: "Kept only in this page's memory and never written to browser storage.",
           loadStatus: "Load status",
@@ -239,9 +257,20 @@
           unexpectedError: "An unexpected error occurred.",
           quotaBalance: "Subscription balance",
           unavailable: "Unavailable",
+          unknown: "Unknown",
           localEstimatedTokens: "Local estimated tokens",
+          cachedTokens: "Cached tokens",
           successfulRequests: "Successful requests",
           failedRequests: "Failed requests",
+          checkpointMetrics: "Checkpoint metrics",
+          checkpointMetricsHelp: "Aggregated in this plugin process only: hits, invalidations, fallbacks, bytes, and time to first token. It never stores or shows session IDs, checkpoints, or token content.",
+          checkpointHits: "Checkpoint hits",
+          checkpointMisses: "Checkpoint misses",
+          checkpointInvalidations: "Checkpoint invalidations",
+          checkpointFallbacks: "Full replay fallbacks",
+          fullReplayBytes: "Full replay bytes",
+          suffixBytes: "Suffix bytes",
+          averageTTFT: "Average time to first token",
           savingSettings: "Saving settings…",
           savedSettingsOne: "Settings saved. {count} model is disabled.",
           savedSettingsMany: "Settings saved. {count} models are disabled.",
@@ -412,9 +441,31 @@
         metrics.append(
           metric(translate("quotaBalance"), translate("unavailable")),
           metric(translate("localEstimatedTokens"), account.local_usage?.total_tokens || 0),
+          metric(translate("cachedTokens"), translate("unknown")),
           metric(translate("successfulRequests"), account.success || 0),
           metric(translate("failedRequests"), account.failed || 0)
         );
+
+        const checkpoint = account.checkpoint_metrics || {};
+        const checkpointMetrics = document.createElement("section");
+        checkpointMetrics.className = "checkpoint-metrics";
+        const checkpointTitle = document.createElement("h3");
+        checkpointTitle.textContent = translate("checkpointMetrics");
+        const checkpointHelp = document.createElement("p");
+        checkpointHelp.className = "muted";
+        checkpointHelp.textContent = translate("checkpointMetricsHelp");
+        const checkpointGrid = document.createElement("div");
+        checkpointGrid.className = "metrics";
+        checkpointGrid.append(
+          metric(translate("checkpointHits"), checkpoint.hits || 0),
+          metric(translate("checkpointMisses"), checkpoint.misses || 0),
+          metric(translate("checkpointInvalidations"), checkpoint.invalidations || 0),
+          metric(translate("checkpointFallbacks"), checkpoint.fallbacks || 0),
+          metric(translate("fullReplayBytes"), checkpoint.full_replay_bytes || 0),
+          metric(translate("suffixBytes"), checkpoint.suffix_bytes || 0),
+          metric(translate("averageTTFT"), checkpoint.ttft_average_ms == null ? translate("unknown") : `${checkpoint.ttft_average_ms} ms`)
+        );
+        checkpointMetrics.append(checkpointTitle, checkpointHelp, checkpointGrid);
 
         const form = document.createElement("form");
         form.dataset.authIndex = account.auth_index;
@@ -477,7 +528,7 @@
         actions.append(save, disableAll);
         fieldset.append(legend, modelGrid);
         form.append(fieldset, actions);
-        card.append(head, metrics, form);
+        card.append(head, metrics, checkpointMetrics, form);
         return card;
       }
 

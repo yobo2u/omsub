@@ -7,6 +7,14 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
+type ContinuationMode uint8
+
+const (
+	FullReplay ContinuationMode = iota
+	CheckpointSuffix
+	CheckpointResume
+)
+
 type RunRequest struct {
 	ConversationID string
 	MessageID      string
@@ -17,11 +25,13 @@ type RunRequest struct {
 	Tools          []ToolDefinition
 	Images         []ImageAttachment
 	Attachments    []FileAttachment
+	Mode           ContinuationMode
+	Checkpoint     []byte
 }
 
 func EncodeRunRequest(request RunRequest) ([]byte, error) {
-	if request.ConversationID == "" || request.MessageID == "" || request.Model == "" || request.Prompt == "" {
-		return nil, fmt.Errorf("Cursor run request requires conversation, message, model, and prompt")
+	if err := validateRunRequest(request); err != nil {
+		return nil, err
 	}
 	client, err := newMessage("AgentClientMessage")
 	if err != nil {
@@ -45,7 +55,7 @@ func EncodeRunRequest(request RunRequest) ([]byte, error) {
 }
 
 func populateRunRequest(run protoreflect.Message, request RunRequest) error {
-	state, err := nestedMessage(run, "conversation_state")
+	state, err := conversationState(run, request)
 	if err != nil {
 		return err
 	}
@@ -75,10 +85,60 @@ func populateRunRequest(run protoreflect.Message, request RunRequest) error {
 	return nil
 }
 
+func validateRunRequest(request RunRequest) error {
+	if request.ConversationID == "" || request.Model == "" {
+		return fmt.Errorf("Cursor run request requires conversation and model")
+	}
+	switch request.Mode {
+	case FullReplay:
+		if len(request.Checkpoint) > 0 || request.MessageID == "" || request.Prompt == "" {
+			return fmt.Errorf("Cursor full replay requires message and prompt without checkpoint")
+		}
+	case CheckpointSuffix:
+		if len(request.Checkpoint) == 0 || request.MessageID == "" || request.Prompt == "" {
+			return fmt.Errorf("Cursor checkpoint suffix requires checkpoint, message, and prompt")
+		}
+	case CheckpointResume:
+		if len(request.Checkpoint) == 0 || request.Prompt != "" {
+			return fmt.Errorf("Cursor checkpoint resume requires checkpoint without prompt")
+		}
+	default:
+		return fmt.Errorf("Cursor run request has unsupported continuation mode %d", request.Mode)
+	}
+	return nil
+}
+
+func conversationState(run protoreflect.Message, request RunRequest) (protoreflect.Message, error) {
+	state, err := nestedMessage(run, "conversation_state")
+	if err != nil {
+		return nil, err
+	}
+	if request.Mode == FullReplay {
+		return state, nil
+	}
+	if err := proto.Unmarshal(request.Checkpoint, state.Interface()); err != nil {
+		return nil, fmt.Errorf("decode Cursor conversation checkpoint: %w", err)
+	}
+	return state, nil
+}
+
 func buildAction(run protoreflect.Message, request RunRequest) (protoreflect.Message, error) {
 	action, err := nestedMessage(run, "action")
 	if err != nil {
 		return nil, err
+	}
+	if request.Mode == CheckpointResume {
+		resume, err := nestedMessage(action, "resume_action")
+		if err != nil {
+			return nil, err
+		}
+		if err := addRequestContext(resume, request.TimeZone); err != nil {
+			return nil, err
+		}
+		if err := setMessage(action, "resume_action", resume); err != nil {
+			return nil, err
+		}
+		return action, nil
 	}
 	userAction, err := nestedMessage(action, "user_message_action")
 	if err != nil {
@@ -89,7 +149,7 @@ func buildAction(run protoreflect.Message, request RunRequest) (protoreflect.Mes
 		return nil, err
 	}
 	prompt := request.Prompt
-	if request.System != "" {
+	if request.Mode == FullReplay && request.System != "" {
 		prompt = request.System + "\n\n" + prompt
 	}
 	if err := setString(userMessage, "text", prompt); err != nil {
@@ -104,31 +164,34 @@ func buildAction(run protoreflect.Message, request RunRequest) (protoreflect.Mes
 	if err := setMessage(userAction, "user_message", userMessage); err != nil {
 		return nil, err
 	}
-	requestContext, err := nestedMessage(userAction, "request_context")
-	if err != nil {
-		return nil, err
-	}
-	environment, err := nestedMessage(requestContext, "env")
-	if err != nil {
-		return nil, err
-	}
-	timeZone := request.TimeZone
-	if timeZone == "" {
-		timeZone = "UTC"
-	}
-	if err := setString(environment, "time_zone", timeZone); err != nil {
-		return nil, err
-	}
-	if err := setMessage(requestContext, "env", environment); err != nil {
-		return nil, err
-	}
-	if err := setMessage(userAction, "request_context", requestContext); err != nil {
+	if err := addRequestContext(userAction, request.TimeZone); err != nil {
 		return nil, err
 	}
 	if err := setMessage(action, "user_message_action", userAction); err != nil {
 		return nil, err
 	}
 	return action, nil
+}
+
+func addRequestContext(parent protoreflect.Message, timeZone string) error {
+	requestContext, err := nestedMessage(parent, "request_context")
+	if err != nil {
+		return err
+	}
+	environment, err := nestedMessage(requestContext, "env")
+	if err != nil {
+		return err
+	}
+	if timeZone == "" {
+		timeZone = "UTC"
+	}
+	if err := setString(environment, "time_zone", timeZone); err != nil {
+		return err
+	}
+	if err := setMessage(requestContext, "env", environment); err != nil {
+		return err
+	}
+	return setMessage(parent, "request_context", requestContext)
 }
 
 func EncodeClientHeartbeat() ([]byte, error) {

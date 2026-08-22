@@ -12,22 +12,24 @@ import (
 type EventKind string
 
 const (
-	EventIgnored  EventKind = "ignored"
-	EventText     EventKind = "text"
-	EventThinking EventKind = "thinking"
-	EventTokens   EventKind = "tokens"
-	EventToolCall EventKind = "tool_call"
-	EventDone     EventKind = "done"
+	EventIgnored    EventKind = "ignored"
+	EventText       EventKind = "text"
+	EventThinking   EventKind = "thinking"
+	EventTokens     EventKind = "tokens"
+	EventToolCall   EventKind = "tool_call"
+	EventCheckpoint EventKind = "checkpoint"
+	EventDone       EventKind = "done"
 )
 
 type ServerEvent struct {
-	Kind      EventKind
-	Type      string
-	Text      string
-	Tokens    int
-	ID        string
-	Name      string
-	Arguments string
+	Kind       EventKind
+	Type       string
+	Text       string
+	Tokens     int
+	ID         string
+	Name       string
+	Arguments  string
+	Checkpoint []byte
 }
 
 func DecodeServerEvent(raw []byte) (ServerEvent, error) {
@@ -42,6 +44,9 @@ func DecodeServerEvent(raw []byte) (ServerEvent, error) {
 	active := server.WhichOneof(messageOneof)
 	if active == nil {
 		return ServerEvent{Kind: EventIgnored, Type: "empty"}, nil
+	}
+	if active.Name() == "conversation_checkpoint_update" {
+		return decodeCheckpoint(server.Get(active).Message())
 	}
 	if active.Name() == "exec_server_message" {
 		execField, err := requireField(server, "exec_server_message")

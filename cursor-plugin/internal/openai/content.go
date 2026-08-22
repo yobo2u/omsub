@@ -17,6 +17,7 @@ type decodedContent struct {
 	Text        string
 	Images      []Image
 	Attachments []Attachment
+	Parts       []ContentPart
 }
 
 type wireContentPart struct {
@@ -47,7 +48,7 @@ func decodeMessageContent(raw json.RawMessage, allowEmpty bool) (decodedContent,
 		if strings.TrimSpace(text) == "" && !allowEmpty {
 			return decodedContent{}, invalidRequest("OpenAI message content is empty")
 		}
-		return decodedContent{Text: text}, nil
+		return decodedContent{Text: text, Parts: []ContentPart{{Kind: ContentText, Text: text}}}, nil
 	}
 	var parts []wireContentPart
 	if err := json.Unmarshal(raw, &parts); err != nil {
@@ -60,6 +61,7 @@ func decodeMessageContent(raw json.RawMessage, allowEmpty bool) (decodedContent,
 		case "text", "input_text":
 			if part.Text != "" {
 				texts = append(texts, part.Text)
+				result.Parts = append(result.Parts, ContentPart{Kind: ContentText, Text: part.Text})
 			}
 		case "image_url", "input_image":
 			image, err := decodeImagePart(part, index)
@@ -67,6 +69,7 @@ func decodeMessageContent(raw json.RawMessage, allowEmpty bool) (decodedContent,
 				return decodedContent{}, err
 			}
 			result.Images = append(result.Images, image)
+			result.Parts = append(result.Parts, ContentPart{Kind: ContentImage, Image: image})
 		case "file", "input_file":
 			image, attachment, err := decodeFilePart(part)
 			if err != nil {
@@ -74,9 +77,11 @@ func decodeMessageContent(raw json.RawMessage, allowEmpty bool) (decodedContent,
 			}
 			if image != nil {
 				result.Images = append(result.Images, *image)
+				result.Parts = append(result.Parts, ContentPart{Kind: ContentImage, Image: *image})
 			}
 			if attachment != nil {
 				result.Attachments = append(result.Attachments, *attachment)
+				result.Parts = append(result.Parts, ContentPart{Kind: ContentAttachment, Attachment: *attachment})
 			}
 		default:
 			return decodedContent{}, invalidRequest(fmt.Sprintf("unsupported OpenAI content part %q", part.Type))
@@ -90,15 +95,16 @@ func decodeMessageContent(raw json.RawMessage, allowEmpty bool) (decodedContent,
 }
 
 func (content decodedContent) promptText() string {
-	parts := make([]string, 0, 1+len(content.Images)+len(content.Attachments))
-	if content.Text != "" {
-		parts = append(parts, content.Text)
-	}
-	for _, image := range content.Images {
-		parts = append(parts, "[Attached image: "+image.Name+"]")
-	}
-	for _, attachment := range content.Attachments {
-		parts = append(parts, "[Attached file: "+attachment.Name+"]")
+	parts := make([]string, 0, len(content.Parts))
+	for _, part := range content.Parts {
+		switch part.Kind {
+		case ContentText:
+			parts = append(parts, part.Text)
+		case ContentImage:
+			parts = append(parts, "[Attached image: "+part.Image.Name+"]")
+		case ContentAttachment:
+			parts = append(parts, "[Attached file: "+part.Attachment.Name+"]")
+		}
 	}
 	return strings.Join(parts, "\n")
 }

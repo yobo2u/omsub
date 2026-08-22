@@ -44,6 +44,8 @@ type ChatRequest struct {
 	Tools       []Tool
 	Images      []Image
 	Attachments []Attachment
+	Transcript  []Message
+	Lineage     Lineage
 }
 
 type wireChatRequest struct {
@@ -97,9 +99,14 @@ func ParseChatRequest(raw []byte) (ChatRequest, error) {
 	history := make([]string, 0, len(wire.Messages))
 	images := make([]Image, 0)
 	attachments := make([]Attachment, 0)
+	transcript := make([]Message, 0, len(wire.Messages))
 	toolNames := make(map[string]string)
 	seenUser := false
 	for _, message := range wire.Messages {
+		role, ok := parseRole(message.Role)
+		if !ok {
+			return ChatRequest{}, invalidRequest(fmt.Sprintf("unsupported OpenAI message role %q", message.Role))
+		}
 		content, err := decodeMessageContent(message.Content, message.Role == "assistant" && len(message.ToolCalls) > 0)
 		if err != nil {
 			return ChatRequest{}, err
@@ -107,15 +114,16 @@ func ParseChatRequest(raw []byte) (ChatRequest, error) {
 		images = append(images, content.Images...)
 		attachments = append(attachments, content.Attachments...)
 		text := content.promptText()
-		switch message.Role {
-		case "system", "developer":
+		canonical := Message{Role: role, Content: content.Parts, ToolCallID: message.ToolCallID, Name: strings.TrimSpace(message.Name)}
+		switch role {
+		case RoleSystem, RoleDeveloper:
 			if text != "" {
 				system = append(system, text)
 			}
-		case "user":
+		case RoleUser:
 			seenUser = true
 			history = append(history, "User: "+text)
-		case "assistant":
+		case RoleAssistant:
 			if text != "" {
 				history = append(history, "Assistant: "+text)
 			}
@@ -124,25 +132,39 @@ func ParseChatRequest(raw []byte) (ChatRequest, error) {
 					return ChatRequest{}, invalidRequest("assistant tool_calls require id and function.name")
 				}
 				toolNames[call.ID] = call.Function.Name
+				canonical.ToolCalls = append(canonical.ToolCalls, ToolCall{
+					ID: call.ID, Name: call.Function.Name, Arguments: call.Function.Arguments,
+				})
 				history = append(history, fmt.Sprintf("Assistant tool call %s (%s): %s", call.Function.Name, call.ID, call.Function.Arguments))
 			}
-		case "tool":
-			name := strings.TrimSpace(message.Name)
+		case RoleTool:
+			name := canonical.Name
 			if name == "" {
 				name = toolNames[message.ToolCallID]
 			}
+			canonical.Name = name
 			history = append(history, fmt.Sprintf("Tool result %s (%s): %s", name, message.ToolCallID, text))
-		default:
-			return ChatRequest{}, invalidRequest(fmt.Sprintf("unsupported OpenAI message role %q", message.Role))
 		}
+		transcript = append(transcript, canonical)
 	}
 	if !seenUser {
 		return ChatRequest{}, invalidRequest("OpenAI chat request requires a user message")
 	}
-	return ChatRequest{
+	request := ChatRequest{
 		Model: model, System: strings.Join(system, "\n\n"), Prompt: strings.Join(history, "\n"), Stream: wire.Stream,
-		Tools: tools, Images: images, Attachments: attachments,
-	}, nil
+		Tools: tools, Images: images, Attachments: attachments, Transcript: transcript,
+	}
+	request.Lineage = buildLineage(model, tools, transcript)
+	return request, nil
+}
+
+func parseRole(value string) (Role, bool) {
+	switch Role(value) {
+	case RoleSystem, RoleDeveloper, RoleUser, RoleAssistant, RoleTool:
+		return Role(value), true
+	default:
+		return "", false
+	}
 }
 
 func decodeTools(wireTools []wireTool, rawChoice json.RawMessage) ([]Tool, error) {

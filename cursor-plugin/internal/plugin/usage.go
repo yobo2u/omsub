@@ -32,13 +32,14 @@ type localUsageStatus struct {
 }
 
 type usageStore struct {
-	mu        sync.RWMutex
-	startedAt time.Time
-	byAuth    map[string]localUsageStatus
+	mu          sync.RWMutex
+	startedAt   time.Time
+	byAuth      map[string]localUsageStatus
+	checkpoints *checkpointMetrics
 }
 
 func newUsageStore() *usageStore {
-	return &usageStore{startedAt: time.Now().UTC(), byAuth: make(map[string]localUsageStatus)}
+	return &usageStore{startedAt: time.Now().UTC(), byAuth: make(map[string]localUsageStatus), checkpoints: newCheckpointMetrics()}
 }
 
 func (handler *Handler) handleUsage(raw []byte) (any, error) {

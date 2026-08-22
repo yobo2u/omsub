@@ -8,15 +8,18 @@ import (
 
 	"cursorplugin/internal/cursorapi"
 	"cursorplugin/internal/cursorauth"
+	"cursorplugin/internal/cursorsession"
 	"cursorplugin/internal/openai"
 )
 
 type Handler struct {
-	auth    *cursorauth.Service
-	cursor  CursorClient
-	emitter StreamEmitter
-	host    HostCaller
-	usage   *usageStore
+	auth     *cursorauth.Service
+	cursor   CursorClient
+	emitter  StreamEmitter
+	host     HostCaller
+	usage    *usageStore
+	sessions *cursorsession.Store
+	turns    *sessionTurnLocks
 }
 
 func NewHandler(dependencies Dependencies) *Handler {
@@ -31,7 +34,8 @@ func NewHandler(dependencies Dependencies) *Handler {
 	}
 	return &Handler{
 		auth: dependencies.Auth, cursor: dependencies.Cursor, emitter: dependencies.Emitter,
-		host: dependencies.Host, usage: newUsageStore(),
+		host: dependencies.Host, usage: newUsageStore(), sessions: cursorsession.NewStore(cursorsession.Options{}),
+		turns: newSessionTurnLocks(),
 	}
 }
 
@@ -102,7 +106,7 @@ func registration() map[string]any {
 		"schema_version": 3,
 		"metadata": map[string]any{
 			"Name":             "cursor",
-			"Version":          "0.5.2",
+			"Version":          "0.5.5",
 			"Author":           "yobo",
 			"GitHubRepository": "https://github.com/yobo2u/omsub",
 			"Logo":             "",

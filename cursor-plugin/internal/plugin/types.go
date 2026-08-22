@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"time"
 
 	"cursorplugin/internal/cursorapi"
@@ -12,7 +13,7 @@ import (
 )
 
 type CursorClient interface {
-	Run(context.Context, cursorapi.RunInput, func(cursorproto.ServerEvent) error) error
+	Run(context.Context, cursorapi.RunInput, func(cursorproto.ServerEvent) error) (cursorapi.RunResult, error)
 	DiscoverModels(context.Context, string) ([]string, error)
 }
 
@@ -68,13 +69,23 @@ type modelInfo struct {
 }
 
 type executorRequest struct {
-	Model           string          `json:"Model"`
-	Format          string          `json:"Format"`
-	OriginalRequest []byte          `json:"OriginalRequest"`
-	Payload         []byte          `json:"Payload"`
-	StorageJSON     []byte          `json:"StorageJSON"`
-	StreamID        string          `json:"stream_id"`
-	Metadata        json.RawMessage `json:"Metadata"`
+	AuthID          string            `json:"AuthID"`
+	AuthProvider    string            `json:"AuthProvider"`
+	Model           string            `json:"Model"`
+	Format          string            `json:"Format"`
+	Stream          bool              `json:"Stream"`
+	Alt             string            `json:"Alt"`
+	Headers         http.Header       `json:"Headers"`
+	Query           url.Values        `json:"Query"`
+	OriginalRequest []byte            `json:"OriginalRequest"`
+	SourceFormat    string            `json:"SourceFormat"`
+	ResponseFormat  string            `json:"ResponseFormat"`
+	Payload         []byte            `json:"Payload"`
+	Metadata        executorMetadata  `json:"Metadata"`
+	StorageJSON     []byte            `json:"StorageJSON"`
+	AuthMetadata    json.RawMessage   `json:"AuthMetadata"`
+	AuthAttributes  map[string]string `json:"AuthAttributes"`
+	StreamID        string            `json:"stream_id"`
 }
 
 type executorResponse struct {

@@ -38,8 +38,8 @@ type fakeModelCursorClient struct {
 	models []string
 }
 
-func (client fakeModelCursorClient) Run(context.Context, cursorapi.RunInput, func(cursorproto.ServerEvent) error) error {
-	return nil
+func (client fakeModelCursorClient) Run(context.Context, cursorapi.RunInput, func(cursorproto.ServerEvent) error) (cursorapi.RunResult, error) {
+	return cursorapi.RunResult{}, nil
 }
 
 func (client fakeModelCursorClient) DiscoverModels(context.Context, string) ([]string, error) {

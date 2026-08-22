@@ -13,25 +13,42 @@ import (
 )
 
 type RunInput struct {
-	AccessToken string
-	Model       string
-	System      string
-	Prompt      string
-	Tools       []cursorproto.ToolDefinition
-	Images      []cursorproto.ImageAttachment
-	Attachments []cursorproto.FileAttachment
+	AccessToken    string
+	Model          string
+	System         string
+	Prompt         string
+	ConversationID string
+	Checkpoint     []byte
+	Mode           cursorproto.ContinuationMode
+	Tools          []cursorproto.ToolDefinition
+	Images         []cursorproto.ImageAttachment
+	Attachments    []cursorproto.FileAttachment
 }
 
-func (client *Client) Run(ctx context.Context, input RunInput, emit func(cursorproto.ServerEvent) error) error {
-	if input.AccessToken == "" || input.Model == "" || input.Prompt == "" {
-		return errors.New("Cursor run requires token, model, and prompt")
+type RunResult struct {
+	ConversationID string
+	Checkpoint     []byte
+	OutputExposed  bool
+	ToolExposed    bool
+	TTFT           time.Duration
+}
+
+func (client *Client) Run(
+	ctx context.Context,
+	input RunInput,
+	emit func(cursorproto.ServerEvent) error,
+) (RunResult, error) {
+	if input.AccessToken == "" || input.Model == "" || (input.Prompt == "" && input.Mode != cursorproto.CheckpointResume) {
+		return RunResult{}, errors.New("Cursor run requires token, model, and prompt")
 	}
-	requestID := randomUUID()
-	sessionID := randomUUID()
-	messageID := randomUUID()
+	conversationID := input.ConversationID
+	if conversationID == "" {
+		conversationID = "cursor_" + strings.ReplaceAll(randomUUID(), "-", "")
+	}
+	result := RunResult{ConversationID: conversationID}
 	runPayload, err := cursorproto.EncodeRunRequest(cursorproto.RunRequest{
-		ConversationID: "cursor_" + strings.ReplaceAll(randomUUID(), "-", ""),
-		MessageID:      messageID,
+		ConversationID: conversationID,
+		MessageID:      randomUUID(),
 		Model:          input.Model,
 		System:         input.System,
 		Prompt:         input.Prompt,
@@ -39,56 +56,59 @@ func (client *Client) Run(ctx context.Context, input RunInput, emit func(cursorp
 		Tools:          input.Tools,
 		Images:         input.Images,
 		Attachments:    input.Attachments,
+		Mode:           input.Mode,
+		Checkpoint:     input.Checkpoint,
 	})
 	if err != nil {
-		return err
+		return result, err
 	}
 	heartbeatPayload, err := cursorproto.EncodeClientHeartbeat()
 	if err != nil {
-		return err
+		return result, err
 	}
-	runBodyReader, runBodyWriter := io.Pipe()
-	runContext, cancelRun := context.WithCancelCause(ctx)
+	overallContext, cancelOverall := context.WithTimeout(ctx, client.overall)
+	defer cancelOverall()
+	runContext, cancelRun := context.WithCancelCause(overallContext)
 	defer cancelRun(nil)
-	firstFrameTimer := time.AfterFunc(client.firstFrame, func() {
-		cancelRun(ErrFirstFrameTimeout)
-	})
-	defer firstFrameTimer.Stop()
+	watchdogs := newRunWatchdogs(cancelRun, client)
+	defer watchdogs.stop()
+
+	runBodyReader, runBodyWriter := io.Pipe()
 	request, err := http.NewRequestWithContext(runContext, http.MethodPost, client.endpoint("/agent.v1.AgentService/Run"), runBodyReader)
 	if err != nil {
-		return errors.Join(fmt.Errorf("create Cursor Run request: %w", err), runBodyReader.Close(), runBodyWriter.Close())
+		return result, errors.Join(fmt.Errorf("create Cursor Run request: %w", err), runBodyReader.Close(), runBodyWriter.Close())
 	}
 	client.applyHeaders(request, requestHeaders{
 		accessToken: input.AccessToken,
-		requestID:   requestID,
-		sessionID:   sessionID,
+		requestID:   randomUUID(),
+		sessionID:   randomUUID(),
 	}, "application/connect+proto")
 	stopWriter := make(chan struct{})
-	outbound := make(chan []byte, 16)
 	writeResult := make(chan error, 1)
+	outbound := make(chan []byte, 16)
 	go func() {
 		writeResult <- writeRunFrames(runContext, runBodyWriter, runPayload, heartbeatPayload, client.heartbeat, outbound, stopWriter)
 	}()
+
 	runResponse, err := client.httpClient.Do(request)
-	firstFrameTimer.Stop()
 	if err != nil {
 		readerErr := runBodyReader.CloseWithError(err)
 		close(stopWriter)
-		if errors.Is(context.Cause(runContext), ErrFirstFrameTimeout) {
-			return errors.Join(ErrFirstFrameTimeout, <-writeResult, readerErr, runBodyWriter.CloseWithError(err))
-		}
-		return errors.Join(fmt.Errorf("start Cursor Run: %w", err), <-writeResult, readerErr, runBodyWriter.CloseWithError(err))
+		return result, errors.Join(runCause(runContext, fmt.Errorf("start Cursor Run: %w", err)), <-writeResult, readerErr, runBodyWriter.CloseWithError(err))
 	}
 	if runResponse.StatusCode != http.StatusOK {
 		status := runResponse.StatusCode
+		body, bodyErr := io.ReadAll(io.LimitReader(runResponse.Body, 1<<20))
 		readerErr := runBodyReader.Close()
 		close(stopWriter)
-		return errors.Join(fmt.Errorf("Cursor Run returned HTTP %d", status), readerErr, <-writeResult, runResponse.Body.Close(), runBodyWriter.Close())
+		return result, errors.Join(runStatusError(status, body), bodyErr, readerErr, <-writeResult, runResponse.Body.Close(), runBodyWriter.Close())
 	}
-	streamErr := readRunStream(runContext, runResponse.Body, emit, cursorproto.NewBlobStore(), outbound)
-	readerErr := runBodyReader.Close()
+	result, streamErr := readRunStream(
+		runContext, runResponse.Body, result, emit, cursorproto.NewBlobStore(), outbound, watchdogs, client.trailingDrain,
+	)
 	close(stopWriter)
-	return errors.Join(streamErr, readerErr, <-writeResult, runResponse.Body.Close(), runBodyWriter.Close())
+	readerErr := runBodyReader.Close()
+	return result, errors.Join(streamErr, readerErr, <-writeResult, runResponse.Body.Close(), runBodyWriter.Close())
 }
 
 func writeRunFrames(
@@ -101,9 +121,10 @@ func writeRunFrames(
 	stop <-chan struct{},
 ) error {
 	if _, err := writer.Write(cursorproto.EncodeConnectFrame(runPayload)); err != nil {
-		select {
-		case <-ctx.Done():
+		if ctx.Err() != nil {
 			return nil
+		}
+		select {
 		case <-stop:
 			return nil
 		default:
@@ -124,9 +145,10 @@ func writeRunFrames(
 			}
 		case <-ticker.C:
 			if _, err := writer.Write(cursorproto.EncodeConnectFrame(heartbeatPayload)); err != nil {
-				select {
-				case <-ctx.Done():
+				if ctx.Err() != nil {
 					return nil
+				}
+				select {
 				case <-stop:
 					return nil
 				default:
@@ -137,59 +159,9 @@ func writeRunFrames(
 	}
 }
 
-func readRunStream(
-	ctx context.Context,
-	body io.Reader,
-	emit func(cursorproto.ServerEvent) error,
-	blobs *cursorproto.BlobStore,
-	outbound chan<- []byte,
-) error {
-	decoder := cursorproto.NewFrameDecoder(32 << 20)
-	buffer := make([]byte, 32<<10)
-	for {
-		count, readErr := body.Read(buffer)
-		if count > 0 {
-			frames, err := decoder.Push(buffer[:count])
-			if err != nil {
-				return err
-			}
-			toolCallSeen := false
-			for _, frame := range frames {
-				if frame.Flags != 0 {
-					return fmt.Errorf("Cursor stream ended with Connect flags %d", frame.Flags)
-				}
-				reply, handled, err := blobs.HandleServerMessage(frame.Payload)
-				if err != nil {
-					return err
-				}
-				if handled {
-					select {
-					case outbound <- reply:
-					case <-ctx.Done():
-						return context.Cause(ctx)
-					}
-				}
-				event, err := cursorproto.DecodeServerEvent(frame.Payload)
-				if err != nil {
-					return err
-				}
-				if err := emit(event); err != nil {
-					return fmt.Errorf("emit Cursor event: %w", err)
-				}
-				if event.Kind == cursorproto.EventDone {
-					return nil
-				}
-				toolCallSeen = toolCallSeen || event.Kind == cursorproto.EventToolCall
-			}
-			if toolCallSeen {
-				return nil
-			}
-		}
-		if errors.Is(readErr, io.EOF) {
-			return errors.New("Cursor stream closed before turn end")
-		}
-		if readErr != nil {
-			return fmt.Errorf("read Cursor stream: %w", readErr)
-		}
+func runCause(ctx context.Context, fallback error) error {
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
 	}
+	return fallback
 }

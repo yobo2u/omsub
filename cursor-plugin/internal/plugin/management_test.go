@@ -3,9 +3,13 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
+	"time"
 
+	"cursorplugin/internal/cursorapi"
 	"cursorplugin/internal/cursorauth"
+	"cursorplugin/internal/cursorproto"
 
 	"github.com/stretchr/testify/require"
 )
@@ -189,6 +193,52 @@ func Test_Handler_ManagementStatus_includes_plugin_local_estimated_usage(t *test
 	require.Contains(t, string(response.Body), `"local_usage":{"scope":"plugin_process"`)
 	require.Contains(t, string(response.Body), `"estimated":true`)
 	require.Contains(t, string(response.Body), `"total_tokens":20`)
+	require.NotContains(t, string(response.Body), `"cached_tokens"`)
+}
+
+func Test_Handler_ManagementStatus_aggregates_checkpoint_metrics_without_sensitive_state(t *testing.T) {
+	// Given
+	credentials, err := cursorauth.MarshalCredentials(cursorauth.Credentials{
+		AccessToken: "secret-access", RefreshToken: "secret-refresh", AccountID: "account-a", Type: "cursor",
+	})
+	require.NoError(t, err)
+	client := &recordingCursorClient{steps: []cursorRunStep{
+		{events: []cursorproto.ServerEvent{{Kind: cursorproto.EventText, Text: "seed-answer"}, {Kind: cursorproto.EventDone}}, result: cursorapi.RunResult{ConversationID: "conversation-secret", Checkpoint: []byte("checkpoint-secret"), OutputExposed: true, TTFT: 10 * time.Millisecond}},
+		{result: cursorapi.RunResult{ConversationID: "conversation-secret", TTFT: 20 * time.Millisecond}, err: fmt.Errorf("checkpoint rejected: %w", cursorapi.ErrInvalidArgument)},
+		{events: []cursorproto.ServerEvent{{Kind: cursorproto.EventText, Text: "fallback-answer"}, {Kind: cursorproto.EventDone}}, result: cursorapi.RunResult{ConversationID: "fresh-conversation-secret", Checkpoint: []byte("fresh-checkpoint-secret"), OutputExposed: true, TTFT: 30 * time.Millisecond}},
+	}}
+	handler := NewHandler(Dependencies{Cursor: client, Host: &fakeHostCaller{credentialJSON: credentials}})
+	seed := executorFixture(t, "session-secret", "account-a", "cursor-auth", "auto", "", []map[string]any{textMessage("user", "seed")})
+	continuation := executorFixture(t, "session-secret", "account-a", "cursor-auth", "auto", "", []map[string]any{
+		textMessage("user", "seed"), textMessage("assistant", "seed-answer"), textMessage("user", "next"),
+	})
+
+	_, err = handler.execute(context.Background(), seed)
+	require.NoError(t, err)
+
+	// When
+	_, err = handler.execute(context.Background(), continuation)
+	require.NoError(t, err)
+	response, err := handler.managementStatus(context.Background())
+
+	// Then
+	require.NoError(t, err)
+	var status cursorManagementStatus
+	require.NoError(t, json.Unmarshal(response.Body, &status))
+	require.Len(t, status.Accounts, 1)
+	metrics := status.Accounts[0].CheckpointMetrics
+	require.EqualValues(t, 1, metrics.Hits)
+	require.EqualValues(t, 2, metrics.Misses)
+	require.EqualValues(t, 1, metrics.Invalidations)
+	require.EqualValues(t, 1, metrics.Fallbacks)
+	require.Positive(t, metrics.FullReplayBytes)
+	require.Positive(t, metrics.SuffixBytes)
+	require.EqualValues(t, 3, metrics.TTFTSamples)
+	require.EqualValues(t, 60, metrics.TTFTTotalMilliseconds)
+	require.NotContains(t, string(response.Body), "session-secret")
+	require.NotContains(t, string(response.Body), "conversation-secret")
+	require.NotContains(t, string(response.Body), "checkpoint-secret")
+	require.NotContains(t, string(response.Body), "secret-access")
 }
 
 func Test_Handler_ManagementResource_serves_bilingual_shell_without_exposing_auth_data(t *testing.T) {
@@ -216,6 +266,17 @@ func Test_Handler_ManagementResource_serves_bilingual_shell_without_exposing_aut
 	require.Contains(t, string(response.Body), `saveSettings: "保存设置"`)
 	require.Contains(t, string(response.Body), `saveSettings: "Save settings"`)
 	require.Contains(t, string(response.Body), `save.dataset.action = "save-settings"`)
+	require.Contains(t, string(response.Body), `checkpointMetrics: "检查点指标"`)
+	require.Contains(t, string(response.Body), `checkpointMetrics: "Checkpoint metrics"`)
+	require.Contains(t, string(response.Body), `unknown: "未知"`)
+	require.Contains(t, string(response.Body), `unknown: "Unknown"`)
+	require.Contains(t, string(response.Body), `metric(translate("cachedTokens"), translate("unknown"))`)
+	require.Contains(t, string(response.Body), `checkpoint.ttft_average_ms == null ? translate("unknown")`)
+	require.Contains(t, string(response.Body), `<span class="nowrap" data-i18n="quotaUnknownTerm">“未知”</span>`)
+	require.Contains(t, string(response.Body), `quotaBodySuffixPrefix: "。缓存 Token 未知时会明确显示"`)
+	require.Contains(t, string(response.Body), `quotaUnknownTerm: "Unknown"`)
+	require.Contains(t, string(response.Body), `quotaBodySuffixSuffix: " when unavailable."`)
+	require.Contains(t, string(response.Body), `.nowrap { white-space: nowrap; }`)
 	require.Contains(t, string(response.Body), `<select id="language"`)
 	require.Contains(t, string(response.Body), `<option value="zh-CN">中文</option>`)
 	require.Contains(t, string(response.Body), `<option value="en">English</option>`)

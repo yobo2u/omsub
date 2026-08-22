@@ -18,18 +18,32 @@ import (
 const (
 	maxModelResponseBytes    = 4 << 20
 	defaultHeartbeatInterval = 5 * time.Second
-	defaultFirstFrameTimeout = 30 * time.Second
+	defaultFirstDataTimeout  = 30 * time.Second
+	defaultFrameSilence      = 30 * time.Second
+	defaultProgressTimeout   = 90 * time.Second
+	defaultOverallTimeout    = 15 * time.Minute
+	defaultTrailingDrain     = 100 * time.Millisecond
 	defaultClientVersion     = "cli-2026.07.08-0c04a8a"
 )
 
-var ErrFirstFrameTimeout = errors.New("Cursor transport timed out before first response")
+var (
+	ErrFirstDataTimeout    = errors.New("Cursor transport timed out before first response data")
+	ErrFirstFrameTimeout   = ErrFirstDataTimeout
+	ErrFrameSilenceTimeout = errors.New("Cursor transport timed out between decoded frames")
+	ErrProgressTimeout     = errors.New("Cursor transport timed out without meaningful progress")
+)
 
 type Config struct {
-	BaseURL           string
-	ClientVersion     string
-	HTTPClient        *http.Client
-	HeartbeatInterval time.Duration
-	FirstFrameTimeout time.Duration
+	BaseURL              string
+	ClientVersion        string
+	HTTPClient           *http.Client
+	HeartbeatInterval    time.Duration
+	FirstDataTimeout     time.Duration
+	FirstFrameTimeout    time.Duration
+	FrameSilenceTimeout  time.Duration
+	ProgressTimeout      time.Duration
+	OverallTimeout       time.Duration
+	TrailingDrainTimeout time.Duration
 }
 
 type Client struct {
@@ -37,7 +51,11 @@ type Client struct {
 	clientVersion string
 	httpClient    *http.Client
 	heartbeat     time.Duration
-	firstFrame    time.Duration
+	firstData     time.Duration
+	frameSilence  time.Duration
+	progress      time.Duration
+	overall       time.Duration
+	trailingDrain time.Duration
 }
 
 func NewClient(config Config) (*Client, error) {
@@ -60,15 +78,34 @@ func NewClient(config Config) (*Client, error) {
 	if config.HeartbeatInterval <= 0 {
 		config.HeartbeatInterval = defaultHeartbeatInterval
 	}
-	if config.FirstFrameTimeout <= 0 {
-		config.FirstFrameTimeout = defaultFirstFrameTimeout
+	if config.FirstDataTimeout <= 0 {
+		config.FirstDataTimeout = config.FirstFrameTimeout
+	}
+	if config.FirstDataTimeout <= 0 {
+		config.FirstDataTimeout = defaultFirstDataTimeout
+	}
+	if config.FrameSilenceTimeout <= 0 {
+		config.FrameSilenceTimeout = defaultFrameSilence
+	}
+	if config.ProgressTimeout <= 0 {
+		config.ProgressTimeout = defaultProgressTimeout
+	}
+	if config.OverallTimeout <= 0 {
+		config.OverallTimeout = defaultOverallTimeout
+	}
+	if config.TrailingDrainTimeout <= 0 {
+		config.TrailingDrainTimeout = defaultTrailingDrain
 	}
 	return &Client{
 		baseURL:       baseURL,
 		clientVersion: config.ClientVersion,
 		httpClient:    client,
 		heartbeat:     config.HeartbeatInterval,
-		firstFrame:    config.FirstFrameTimeout,
+		firstData:     config.FirstDataTimeout,
+		frameSilence:  config.FrameSilenceTimeout,
+		progress:      config.ProgressTimeout,
+		overall:       config.OverallTimeout,
+		trailingDrain: config.TrailingDrainTimeout,
 	}, nil
 }
 

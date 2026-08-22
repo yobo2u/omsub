@@ -52,7 +52,7 @@ func Test_Client_Run_streams_text_until_turn_end(t *testing.T) {
 	var events []cursorproto.ServerEvent
 
 	// When
-	err = client.Run(ctx, RunInput{AccessToken: "token", Model: "auto", Prompt: "say ok"}, func(event cursorproto.ServerEvent) error {
+	_, err = client.Run(ctx, RunInput{AccessToken: "token", Model: "auto", Prompt: "say ok"}, func(event cursorproto.ServerEvent) error {
 		events = append(events, event)
 		return nil
 	})
@@ -86,7 +86,7 @@ func Test_Client_Run_keeps_HTTP2_request_stream_open(t *testing.T) {
 	require.NoError(t, err)
 
 	// When
-	err = client.Run(context.Background(), RunInput{AccessToken: "token", Model: "default", Prompt: "say ok"}, func(cursorproto.ServerEvent) error {
+	_, err = client.Run(context.Background(), RunInput{AccessToken: "token", Model: "default", Prompt: "say ok"}, func(cursorproto.ServerEvent) error {
 		return nil
 	})
 
@@ -106,7 +106,7 @@ func Test_Client_Run_returns_after_exec_mcp_tool_call_without_turn_end(t *testin
 	require.NoError(t, err)
 	var events []cursorproto.ServerEvent
 
-	err = client.Run(context.Background(), RunInput{AccessToken: "token", Model: "default", Prompt: "read probe"}, func(event cursorproto.ServerEvent) error {
+	result, err := client.Run(context.Background(), RunInput{AccessToken: "token", Model: "default", Prompt: "read probe"}, func(event cursorproto.ServerEvent) error {
 		events = append(events, event)
 		return nil
 	})
@@ -117,6 +117,9 @@ func Test_Client_Run_returns_after_exec_mcp_tool_call_without_turn_end(t *testin
 	require.Equal(t, "call_1", events[0].ID)
 	require.Equal(t, "read_file", events[0].Name)
 	require.JSONEq(t, `{"path":"probe.txt"}`, events[0].Arguments)
+	require.False(t, result.OutputExposed)
+	require.True(t, result.ToolExposed)
+	require.Positive(t, result.TTFT)
 }
 
 func Test_Client_Run_sends_heartbeat_before_response_headers(t *testing.T) {
@@ -146,7 +149,7 @@ func Test_Client_Run_sends_heartbeat_before_response_headers(t *testing.T) {
 	defer cancel()
 
 	// When
-	err = client.Run(ctx, RunInput{AccessToken: "token", Model: "default", Prompt: "say ok"}, func(cursorproto.ServerEvent) error {
+	_, err = client.Run(ctx, RunInput{AccessToken: "token", Model: "default", Prompt: "say ok"}, func(cursorproto.ServerEvent) error {
 		return nil
 	})
 
@@ -171,7 +174,7 @@ func Test_Client_Run_times_out_before_response_headers(t *testing.T) {
 	require.NoError(t, err)
 
 	// When
-	err = client.Run(context.Background(), RunInput{AccessToken: "token", Model: "default", Prompt: "say ok"}, func(cursorproto.ServerEvent) error {
+	_, err = client.Run(context.Background(), RunInput{AccessToken: "token", Model: "default", Prompt: "say ok"}, func(cursorproto.ServerEvent) error {
 		return nil
 	})
 

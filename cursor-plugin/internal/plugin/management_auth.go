@@ -49,21 +49,23 @@ type cursorQuotaStatus struct {
 }
 
 type cursorAccountStatus struct {
-	AuthIndex         string              `json:"auth_index"`
-	Name              string              `json:"name"`
-	Label             string              `json:"label"`
-	Status            string              `json:"status"`
-	Success           int64               `json:"success"`
-	Failed            int64               `json:"failed"`
-	SubscriptionQuota cursorQuotaStatus   `json:"subscription_quota"`
-	LocalUsage        localUsageStatus    `json:"local_usage"`
-	Models            []cursorModelStatus `json:"models"`
+	AuthIndex         string                 `json:"auth_index"`
+	Name              string                 `json:"name"`
+	Label             string                 `json:"label"`
+	Status            string                 `json:"status"`
+	Success           int64                  `json:"success"`
+	Failed            int64                  `json:"failed"`
+	SubscriptionQuota cursorQuotaStatus      `json:"subscription_quota"`
+	LocalUsage        localUsageStatus       `json:"local_usage"`
+	CheckpointMetrics checkpointMetricStatus `json:"checkpoint_metrics"`
+	Models            []cursorModelStatus    `json:"models"`
 }
 
 type cursorManagementStatus struct {
-	Provider    string                `json:"provider"`
-	GeneratedAt time.Time             `json:"generated_at"`
-	Accounts    []cursorAccountStatus `json:"accounts"`
+	Provider          string                 `json:"provider"`
+	GeneratedAt       time.Time              `json:"generated_at"`
+	Accounts          []cursorAccountStatus  `json:"accounts"`
+	CheckpointMetrics checkpointMetricStatus `json:"checkpoint_metrics"`
 }
 
 type disabledModelsUpdate struct {
@@ -76,7 +78,7 @@ func (handler *Handler) managementStatus(ctx context.Context) (managementRespons
 	if err != nil {
 		return managementError(http.StatusBadGateway, err.Error()), nil
 	}
-	status := cursorManagementStatus{Provider: "cursor", GeneratedAt: time.Now().UTC(), Accounts: make([]cursorAccountStatus, 0, len(files))}
+	status := cursorManagementStatus{Provider: "cursor", GeneratedAt: time.Now().UTC(), Accounts: make([]cursorAccountStatus, 0, len(files)), CheckpointMetrics: handler.usage.checkpoints.total()}
 	seenIdentities := make(map[string]struct{}, len(files))
 	for _, file := range files {
 		credential, credentialErr := handler.getCursorCredential(ctx, file.AuthIndex)
@@ -100,6 +102,7 @@ func (handler *Handler) managementStatus(ctx context.Context) (managementRespons
 				Label:             file.Label,
 				Status:            "unavailable: " + accountErr.Error(),
 				SubscriptionQuota: cursorQuotaStatus{Status: "unavailable", Reason: quotaUnavailableReason},
+				CheckpointMetrics: handler.usage.checkpoints.snapshot(file.AuthIndex),
 				Models:            []cursorModelStatus{},
 			}
 		}
@@ -135,6 +138,7 @@ func (handler *Handler) cursorAccountStatusWithCredential(ctx context.Context, f
 		Failed:            file.Failed,
 		SubscriptionQuota: cursorQuotaStatus{Status: "unavailable", Reason: quotaUnavailableReason},
 		LocalUsage:        handler.usage.snapshot(file.AuthIndex),
+		CheckpointMetrics: handler.usage.checkpoints.snapshot(file.AuthIndex),
 		Models:            items,
 	}, nil
 }
