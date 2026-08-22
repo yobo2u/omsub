@@ -1,6 +1,7 @@
 package cursorproto
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -41,6 +42,48 @@ func Test_EncodeRunRequest_places_model_and_prompt_in_wire_message(t *testing.T)
 	require.Equal(t, "Asia/Shanghai", environment.Get(field(environment, "time_zone")).String())
 }
 
+func Test_EncodeRunRequest_registers_tools_images_and_file_attachments(t *testing.T) {
+	request := RunRequest{
+		ConversationID: "cursor_conversation",
+		MessageID:      "message-1",
+		Model:          "auto",
+		Prompt:         "Inspect the attachments",
+		Tools: []ToolDefinition{{
+			Name:        "read_file",
+			Description: "Read a file",
+			Parameters:  json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}}}`),
+		}},
+		Images:      []ImageAttachment{{Name: "image.png", MIMEType: "image/png", Data: []byte("image")}},
+		Attachments: []FileAttachment{{Name: "notes.txt", Content: "notes"}},
+	}
+
+	raw, err := EncodeRunRequest(request)
+
+	require.NoError(t, err)
+	message, err := newMessage("AgentClientMessage")
+	require.NoError(t, err)
+	require.NoError(t, proto.Unmarshal(raw, message))
+	run := message.Get(field(message, "run_request")).Message()
+	mcpTools := run.Get(field(run, "mcp_tools")).Message().Get(field(run.Get(field(run, "mcp_tools")).Message(), "mcp_tools")).List()
+	require.Equal(t, 1, mcpTools.Len())
+	tool := mcpTools.Get(0).Message()
+	require.Equal(t, "read_file", tool.Get(field(tool, "tool_name")).String())
+	require.NotEmpty(t, tool.Get(field(tool, "input_schema")).Bytes())
+
+	action := run.Get(field(run, "action")).Message()
+	userAction := action.Get(field(action, "user_message_action")).Message()
+	userMessage := userAction.Get(field(userAction, "user_message")).Message()
+	selected := userMessage.Get(field(userMessage, "selected_context")).Message()
+	require.Equal(t, 1, selected.Get(field(selected, "selected_images")).List().Len())
+	image := selected.Get(field(selected, "selected_images")).List().Get(0).Message()
+	require.Equal(t, "image/png", image.Get(field(image, "mime_type")).String())
+	require.Equal(t, []byte("image"), image.Get(field(image, "data")).Bytes())
+	require.Equal(t, 1, selected.Get(field(selected, "files")).List().Len())
+	file := selected.Get(field(selected, "files")).List().Get(0).Message()
+	require.Equal(t, "notes.txt", file.Get(field(file, "path")).String())
+	require.Equal(t, "notes", file.Get(field(file, "content")).String())
+}
+
 func Test_DecodeServerEvent_maps_text_and_turn_end(t *testing.T) {
 	// Given
 	textWire, err := encodeTestInteractionUpdate("text_delta", "text", "hello")
@@ -77,6 +120,42 @@ func Test_DecodeServerEvent_names_ignored_top_level_message(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, EventIgnored, event.Kind)
 	require.Equal(t, "kv_server_message", event.Type)
+}
+
+func Test_DecodeServerEvent_maps_completed_mcp_tool_call(t *testing.T) {
+	server, err := newMessage("AgentServerMessage")
+	require.NoError(t, err)
+	interaction, err := nestedMessage(server, "interaction_update")
+	require.NoError(t, err)
+	completed, err := nestedMessage(interaction, "tool_call_completed")
+	require.NoError(t, err)
+	require.NoError(t, setString(completed, "call_id", "call_1"))
+	toolCall, err := nestedMessage(completed, "tool_call")
+	require.NoError(t, err)
+	mcpCall, err := nestedMessage(toolCall, "mcp_tool_call")
+	require.NoError(t, err)
+	args, err := nestedMessage(mcpCall, "args")
+	require.NoError(t, err)
+	require.NoError(t, setString(args, "provider_identifier", "opencodex-responses"))
+	require.NoError(t, setString(args, "tool_name", "read_file"))
+	require.NoError(t, setString(args, "tool_call_id", "call_1"))
+	argsMap := args.Mutable(field(args, "args")).Map()
+	argsMap.Set(protoreflect.ValueOfString("path").MapKey(), protoreflect.ValueOfBytes([]byte(`"a.txt"`)))
+	require.NoError(t, setMessage(mcpCall, "args", args))
+	require.NoError(t, setMessage(toolCall, "mcp_tool_call", mcpCall))
+	require.NoError(t, setMessage(completed, "tool_call", toolCall))
+	require.NoError(t, setMessage(interaction, "tool_call_completed", completed))
+	require.NoError(t, setMessage(server, "interaction_update", interaction))
+	raw, err := proto.Marshal(server)
+	require.NoError(t, err)
+
+	event, err := DecodeServerEvent(raw)
+
+	require.NoError(t, err)
+	require.Equal(t, EventToolCall, event.Kind)
+	require.Equal(t, "call_1", event.ID)
+	require.Equal(t, "read_file", event.Name)
+	require.JSONEq(t, `{"path":"a.txt"}`, event.Arguments)
 }
 
 func encodeTestInteractionUpdate(updateName, valueName, value string) ([]byte, error) {

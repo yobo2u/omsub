@@ -29,16 +29,22 @@ func (handler *Handler) execute(ctx context.Context, raw []byte) (any, error) {
 		Model:       chat.Model,
 		System:      chat.System,
 		Prompt:      chat.Prompt,
+		Tools:       cursorTools(chat.Tools),
+		Images:      cursorImages(chat.Images),
+		Attachments: cursorAttachments(chat.Attachments),
 	}, func(event cursorproto.ServerEvent) error {
-		if event.Kind == cursorproto.EventText {
+		switch event.Kind {
+		case cursorproto.EventText:
 			turn.AddText(event.Text)
+		case cursorproto.EventToolCall:
+			turn.AddToolCall(event.ID, event.Name, event.Arguments)
 		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	payload, err := turn.Completion(chat.Prompt)
+	payload, err := turn.Completion(usageText(chat))
 	if err != nil {
 		return nil, err
 	}
@@ -70,6 +76,9 @@ func (handler *Handler) runStream(parent context.Context, streamID string, chat 
 		Model:       chat.Model,
 		System:      chat.System,
 		Prompt:      chat.Prompt,
+		Tools:       cursorTools(chat.Tools),
+		Images:      cursorImages(chat.Images),
+		Attachments: cursorAttachments(chat.Attachments),
 	}, func(event cursorproto.ServerEvent) error {
 		switch event.Kind {
 		case cursorproto.EventText:
@@ -80,7 +89,7 @@ func (handler *Handler) runStream(parent context.Context, streamID string, chat 
 			return handler.emitter.Emit(ctx, streamID, chunk)
 		case cursorproto.EventDone:
 			done = true
-			chunk, err := turn.FinalChunk(chat.Prompt)
+			chunk, err := turn.FinalChunk(usageText(chat))
 			if err != nil {
 				return err
 			}
@@ -88,6 +97,12 @@ func (handler *Handler) runStream(parent context.Context, streamID string, chat 
 				return err
 			}
 			return handler.emitter.Emit(ctx, streamID, []byte("[DONE]"))
+		case cursorproto.EventToolCall:
+			chunk, err := turn.StreamToolCall(event.ID, event.Name, event.Arguments)
+			if err != nil {
+				return err
+			}
+			return handler.emitter.Emit(ctx, streamID, chunk)
 		case cursorproto.EventIgnored, cursorproto.EventThinking, cursorproto.EventTokens:
 			return nil
 		default:
@@ -100,6 +115,41 @@ func (handler *Handler) runStream(parent context.Context, streamID string, chat 
 	if closeErr := handler.emitter.Close(streamID, runErr); closeErr != nil {
 		return
 	}
+}
+
+func cursorTools(tools []openai.Tool) []cursorproto.ToolDefinition {
+	result := make([]cursorproto.ToolDefinition, len(tools))
+	for index, tool := range tools {
+		result[index] = cursorproto.ToolDefinition{Name: tool.Name, Description: tool.Description, Parameters: tool.Parameters}
+	}
+	return result
+}
+
+func cursorImages(images []openai.Image) []cursorproto.ImageAttachment {
+	result := make([]cursorproto.ImageAttachment, len(images))
+	for index, image := range images {
+		result[index] = cursorproto.ImageAttachment{Name: image.Name, MIMEType: image.MIMEType, Data: image.Data}
+	}
+	return result
+}
+
+func cursorAttachments(attachments []openai.Attachment) []cursorproto.FileAttachment {
+	result := make([]cursorproto.FileAttachment, len(attachments))
+	for index, attachment := range attachments {
+		result[index] = cursorproto.FileAttachment{Name: attachment.Name, Content: attachment.Content}
+	}
+	return result
+}
+
+func usageText(chat openai.ChatRequest) string {
+	text := chat.System + chat.Prompt
+	for _, attachment := range chat.Attachments {
+		text += attachment.Content
+	}
+	for _, tool := range chat.Tools {
+		text += tool.Name + tool.Description + string(tool.Parameters)
+	}
+	return text
 }
 
 func decodeExecution(raw []byte) (executorRequest, openai.ChatRequest, cursorauth.Credentials, error) {
@@ -140,7 +190,7 @@ func countTokens(raw []byte) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	tokens := max(1, utf8.RuneCountInString(chat.System+chat.Prompt)/4)
+	tokens := max(1, utf8.RuneCountInString(usageText(chat))/4)
 	encoded, err := json.Marshal(map[string]int{"total_tokens": tokens})
 	if err != nil {
 		return nil, fmt.Errorf("encode token count: %w", err)

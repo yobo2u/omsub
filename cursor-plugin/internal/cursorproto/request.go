@@ -14,6 +14,9 @@ type RunRequest struct {
 	System         string
 	Prompt         string
 	TimeZone       string
+	Tools          []ToolDefinition
+	Images         []ImageAttachment
+	Attachments    []FileAttachment
 }
 
 func EncodeRunRequest(request RunRequest) ([]byte, error) {
@@ -66,6 +69,9 @@ func populateRunRequest(run protoreflect.Message, request RunRequest) error {
 	if err := setString(run, "conversation_id", request.ConversationID); err != nil {
 		return err
 	}
+	if err := addTools(run, request.Tools); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -90,6 +96,9 @@ func buildAction(run protoreflect.Message, request RunRequest) (protoreflect.Mes
 		return nil, err
 	}
 	if err := setString(userMessage, "message_id", request.MessageID); err != nil {
+		return nil, err
+	}
+	if err := addSelectedContext(userMessage, request.Images, request.Attachments); err != nil {
 		return nil, err
 	}
 	if err := setMessage(userAction, "user_message", userMessage); err != nil {

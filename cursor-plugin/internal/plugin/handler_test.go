@@ -29,7 +29,7 @@ func Test_Handler_Register_declares_cursor_auth_models_and_executor(t *testing.T
 	require.Contains(t, string(response.Result), `"executor":true`)
 	require.Contains(t, string(response.Result), `"management_api":true`)
 	require.Contains(t, string(response.Result), `"usage_plugin":true`)
-	require.Contains(t, string(response.Result), `"Version":"0.4.1"`)
+	require.Contains(t, string(response.Result), `"Version":"0.5.0"`)
 	require.Contains(t, string(response.Result), `"GitHubRepository":"https://github.com/yobo2u/omsub"`)
 }
 
@@ -80,11 +80,17 @@ func Test_Handler_ExecuteStream_emits_openai_chunks_and_closes(t *testing.T) {
 	require.Equal(t, "[DONE]", string(emitter.payloads[2]))
 }
 
-func Test_Handler_Execute_returns_bad_request_for_unsupported_tools(t *testing.T) {
+func Test_Handler_Execute_returns_tool_call_and_forwards_tool_catalog(t *testing.T) {
 	// Given
-	handler := NewHandler(Dependencies{Cursor: fakeCursorClient{}})
+	cursor := &toolCursorClient{}
+	handler := NewHandler(Dependencies{Cursor: cursor})
+	credentials, err := cursorauth.MarshalCredentials(cursorauth.Credentials{
+		AccessToken: "access", RefreshToken: "refresh", Type: "cursor",
+	})
+	require.NoError(t, err)
 	request := executorRequest{
-		Payload: []byte(`{"model":"cursor/auto","messages":[{"role":"user","content":"call a tool"}],"tools":[{"type":"function","function":{"name":"noop"}}]}`),
+		StorageJSON: credentials,
+		Payload:     []byte(`{"model":"cursor/auto","max_tokens":1000,"messages":[{"role":"user","content":[{"type":"text","text":"call a tool"},{"type":"image_url","image_url":{"url":"data:image/png;base64,aW1hZ2U="}}]}],"tools":[{"type":"function","function":{"name":"read_file","parameters":{"type":"object"}}}]}`),
 	}
 	rawRequest, err := json.Marshal(request)
 	require.NoError(t, err)
@@ -95,8 +101,39 @@ func Test_Handler_Execute_returns_bad_request_for_unsupported_tools(t *testing.T
 	// Then
 	var response envelope
 	require.NoError(t, json.Unmarshal(raw, &response))
-	require.False(t, response.OK)
-	require.Equal(t, 400, response.Error.HTTPStatus)
+	require.True(t, response.OK)
+	var result executorResponse
+	require.NoError(t, json.Unmarshal(response.Result, &result))
+	require.Contains(t, string(result.Payload), `tool_calls`)
+	require.Len(t, cursor.input.Tools, 1)
+	require.Len(t, cursor.input.Images, 1)
+}
+
+func Test_Handler_ExecuteStream_emits_tool_call_and_tool_finish_reason(t *testing.T) {
+	emitter := &captureEmitter{done: make(chan struct{})}
+	handler := NewHandler(Dependencies{Cursor: &toolCursorClient{}, Emitter: emitter})
+	credentials, err := cursorauth.MarshalCredentials(cursorauth.Credentials{
+		AccessToken: "access", RefreshToken: "refresh", Type: "cursor",
+	})
+	require.NoError(t, err)
+	request := executorRequest{
+		StreamID: "stream-tool", StorageJSON: credentials,
+		Payload: []byte(`{"model":"cursor/auto","stream":true,"messages":[{"role":"user","content":"call a tool"}],"tools":[{"type":"function","function":{"name":"read_file","parameters":{"type":"object"}}}]}`),
+	}
+	rawRequest, err := json.Marshal(request)
+	require.NoError(t, err)
+
+	raw := handler.Call(context.Background(), "executor.execute_stream", rawRequest)
+	<-emitter.done
+
+	var response envelope
+	require.NoError(t, json.Unmarshal(raw, &response))
+	require.True(t, response.OK)
+	require.NoError(t, emitter.closeError)
+	require.Len(t, emitter.payloads, 3)
+	require.Contains(t, string(emitter.payloads[0]), `"tool_calls"`)
+	require.Contains(t, string(emitter.payloads[1]), `"finish_reason":"tool_calls"`)
+	require.Equal(t, "[DONE]", string(emitter.payloads[2]))
 }
 
 func Test_Handler_Execute_rejects_model_disabled_by_cursor_plugin(t *testing.T) {
@@ -131,6 +168,24 @@ func (fakeCursorClient) Run(_ context.Context, _ cursorapi.RunInput, emit func(c
 		return err
 	}
 	return emit(cursorproto.ServerEvent{Kind: cursorproto.EventDone})
+}
+
+type toolCursorClient struct {
+	input cursorapi.RunInput
+}
+
+func (client *toolCursorClient) Run(_ context.Context, input cursorapi.RunInput, emit func(cursorproto.ServerEvent) error) error {
+	client.input = input
+	if err := emit(cursorproto.ServerEvent{
+		Kind: cursorproto.EventToolCall, ID: "call_1", Name: "read_file", Arguments: `{"path":"a.txt"}`,
+	}); err != nil {
+		return err
+	}
+	return emit(cursorproto.ServerEvent{Kind: cursorproto.EventDone})
+}
+
+func (*toolCursorClient) DiscoverModels(context.Context, string) ([]string, error) {
+	return []string{"auto"}, nil
 }
 
 func (fakeCursorClient) DiscoverModels(context.Context, string) ([]string, error) {

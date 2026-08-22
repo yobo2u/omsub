@@ -88,6 +88,18 @@ func setMessage(message protoreflect.Message, name protoreflect.Name, value prot
 	return nil
 }
 
+func appendMessage(message protoreflect.Message, name protoreflect.Name, value protoreflect.Message) error {
+	descriptor, err := requireField(message, name)
+	if err != nil {
+		return err
+	}
+	if !descriptor.IsList() || descriptor.Message() == nil {
+		return fmt.Errorf("Cursor field %q is not a message list", name)
+	}
+	message.Mutable(descriptor).List().Append(protoreflect.ValueOfMessage(value))
+	return nil
+}
+
 func nestedMessage(message protoreflect.Message, name protoreflect.Name) (*dynamicpb.Message, error) {
 	descriptor, err := requireField(message, name)
 	if err != nil {

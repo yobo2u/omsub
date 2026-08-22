@@ -17,6 +17,9 @@ type RunInput struct {
 	Model       string
 	System      string
 	Prompt      string
+	Tools       []cursorproto.ToolDefinition
+	Images      []cursorproto.ImageAttachment
+	Attachments []cursorproto.FileAttachment
 }
 
 func (client *Client) Run(ctx context.Context, input RunInput, emit func(cursorproto.ServerEvent) error) error {
@@ -33,6 +36,9 @@ func (client *Client) Run(ctx context.Context, input RunInput, emit func(cursorp
 		System:         input.System,
 		Prompt:         input.Prompt,
 		TimeZone:       "UTC",
+		Tools:          input.Tools,
+		Images:         input.Images,
+		Attachments:    input.Attachments,
 	})
 	if err != nil {
 		return err

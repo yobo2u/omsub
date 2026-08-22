@@ -14,6 +14,7 @@ type Turn struct {
 	model   string
 	created int64
 	text    string
+	tools   []responseToolCall
 }
 
 type Usage struct {
@@ -39,8 +40,21 @@ type completionChoice struct {
 }
 
 type assistantMessage struct {
-	Role    string `json:"role,omitempty"`
-	Content string `json:"content,omitempty"`
+	Role      string             `json:"role,omitempty"`
+	Content   string             `json:"content,omitempty"`
+	ToolCalls []responseToolCall `json:"tool_calls,omitempty"`
+}
+
+type responseToolCall struct {
+	Index    *int                 `json:"index,omitempty"`
+	ID       string               `json:"id"`
+	Type     string               `json:"type"`
+	Function responseToolFunction `json:"function"`
+}
+
+type responseToolFunction struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 func NewTurn(model string) *Turn {
@@ -62,8 +76,23 @@ func (turn *Turn) StreamChunk(text string) ([]byte, error) {
 	return marshalStreamPayload(payload)
 }
 
+func (turn *Turn) StreamToolCall(id, name, arguments string) ([]byte, error) {
+	index := len(turn.tools)
+	call := responseToolCall{
+		ID: id, Type: "function", Function: responseToolFunction{Name: name, Arguments: arguments},
+	}
+	turn.tools = append(turn.tools, call)
+	streamCall := call
+	streamCall.Index = &index
+	payload := chatCompletion{
+		ID: turn.id, Object: "chat.completion.chunk", Created: turn.created, Model: turn.model,
+		Choices: []completionChoice{{Index: 0, Delta: &assistantMessage{Role: "assistant", ToolCalls: []responseToolCall{streamCall}}}},
+	}
+	return marshalStreamPayload(payload)
+}
+
 func (turn *Turn) FinalChunk(prompt string) ([]byte, error) {
-	finish := "stop"
+	finish := turn.finishReason()
 	payload := chatCompletion{
 		ID:      turn.id,
 		Object:  "chat.completion.chunk",
@@ -76,7 +105,7 @@ func (turn *Turn) FinalChunk(prompt string) ([]byte, error) {
 }
 
 func (turn *Turn) Completion(prompt string) ([]byte, error) {
-	finish := "stop"
+	finish := turn.finishReason()
 	payload := chatCompletion{
 		ID:      turn.id,
 		Object:  "chat.completion",
@@ -84,7 +113,7 @@ func (turn *Turn) Completion(prompt string) ([]byte, error) {
 		Model:   turn.model,
 		Choices: []completionChoice{{
 			Index:        0,
-			Message:      &assistantMessage{Role: "assistant", Content: turn.text},
+			Message:      &assistantMessage{Role: "assistant", Content: turn.text, ToolCalls: turn.tools},
 			FinishReason: &finish,
 		}},
 		Usage: estimatedUsage(prompt, turn.text),
@@ -98,6 +127,19 @@ func (turn *Turn) Completion(prompt string) ([]byte, error) {
 
 func (turn *Turn) AddText(text string) {
 	turn.text += text
+}
+
+func (turn *Turn) AddToolCall(id, name, arguments string) {
+	turn.tools = append(turn.tools, responseToolCall{
+		ID: id, Type: "function", Function: responseToolFunction{Name: name, Arguments: arguments},
+	})
+}
+
+func (turn *Turn) finishReason() string {
+	if len(turn.tools) > 0 {
+		return "tool_calls"
+	}
+	return "stop"
 }
 
 func marshalStreamPayload(payload chatCompletion) ([]byte, error) {

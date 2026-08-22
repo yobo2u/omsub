@@ -24,7 +24,7 @@
 当前商店发布物仅支持 Linux amd64：
 
 ```text
-cursor_0.4.1_linux_amd64.zip
+cursor_0.5.0_linux_amd64.zip
 checksums.txt
 ```
 
@@ -33,8 +33,8 @@ checksums.txt
 解压发布包，然后把 `--plugins-dir` 指向 CLIProxyAPI 配置中的 `plugins.dir`：
 
 ```sh
-tar -xzf cursor-plugin-0.4.1-linux-amd64.tar.gz
-cd cursor-plugin-0.4.1-linux-amd64
+tar -xzf cursor-plugin-0.5.0-linux-amd64.tar.gz
+cd cursor-plugin-0.5.0-linux-amd64
 sudo ./install.sh --plugins-dir /opt/cpa-manager-plus/cliproxyapi/plugins
 ```
 
@@ -92,10 +92,13 @@ sudo ./uninstall.sh --plugins-dir /opt/cpa-manager-plus/cliproxyapi/plugins
 
 卸载脚本不会直接删除二进制，而是移动到 `.cursor-uninstalled/`。随后在 CPA Manager Plus 中禁用 `cursor` 并重启 CLIProxyAPI。OAuth 凭据不会自动删除，避免误删账号数据。
 
-## 当前边界
+## 能力与边界
 
-- 支持 OpenAI `chat-completions` 文本消息、非流式和流式响应。
-- 暂不支持 tools、图片和 Responses API；这些请求返回明确的客户端错误。
+- 支持 OpenAI `chat-completions` 文本消息、非流式和 SSE 流式响应，并兼容 OpenCode 发送的 `max_tokens`、`stream_options` 等扩展字段。
+- 支持标准 function tools、`tool_choice`、多工具调用、assistant `tool_calls` 历史和 tool 结果续轮；工具目录通过 Cursor 原生 `mcp_tools` 注册，结果转换为 OpenAI 兼容 `tool_calls`。
+- 支持 `image_url` / `input_image` 内联 data URL，以及 `file` / `input_file` 的图片或 UTF-8 文本附件；图片和文件通过 Cursor 原生 `selected_context` 发送，tool 结果中的图片也能随续轮送达。
+- 为避免服务端请求伪造，远程图片 URL 不由插件下载；调用方应传内联 data URL。仅有 `file_id` 而没有 `file_data` 的附件无法由独立插件解析。
+- 暂不直接实现 Responses API；CLIProxyAPI 可按其 executor 翻译能力把其他协议转换到插件声明的 `chat-completions` 输入输出格式。
 - Cursor 没有公开、稳定的 OAuth 订阅剩余额度接口；管理页不会伪造百分比或余额。
 - token usage 为插件运行期内的本地估算值，不代表 Cursor 账单或订阅额度，进程重启后重新计数。
 - 当前发布包只提供 Linux amd64；其他平台需要对应平台的 CGO 工具链重新构建。
