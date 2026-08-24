@@ -279,6 +279,13 @@ func Test_Handler_ManagementStatus_separates_plugin_outcomes_from_host_attempts_
 	require.Positive(t, account.CheckpointMetrics.FullReplayBytes)
 }
 
+func Test_CursorPluginStatus_uses_successful_discovery_as_readiness_before_local_outcome(t *testing.T) {
+	require.Equal(t, "active", cursorPluginStatus("error", ""))
+	require.Equal(t, "error", cursorPluginStatus("active", "failed"))
+	require.Equal(t, "active", cursorPluginStatus("error", "succeeded"))
+	require.Equal(t, "disabled", cursorPluginStatus("disabled", "succeeded"))
+}
+
 func Test_Handler_ManagementStatus_aggregates_checkpoint_metrics_without_sensitive_state(t *testing.T) {
 	// Given
 	credentials, err := cursorauth.MarshalCredentials(cursorauth.Credentials{

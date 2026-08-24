@@ -52,7 +52,7 @@ Preserve the compact, neutral system-tool character of CLIProxyAPI's own plugin 
 - Semantic headings, labels, fieldsets, legends, and buttons.
 - Visible keyboard focus and minimum 44 px interactive height.
 - Status is not conveyed by color alone.
-- The account status pill represents the plugin's latest terminal request outcome (or credential readiness before the first request). Raw CLIProxyAPI scheduler state is labelled separately.
+- The account status pill represents the plugin's latest terminal request outcome. Before the first local outcome, successful credential loading and model discovery establish readiness; stale CLIProxyAPI scheduler errors stay in the separately labelled host metrics and do not override that readiness. Explicit disabled or inactive host state is still respected.
 - The language selector uses a native labelled control, and `<html lang>` always matches the displayed language.
 - Chinese copy uses natural line breaks; model IDs may break only at safe punctuation.
 - English copy uses concise operational language and remains readable without horizontal scrolling.

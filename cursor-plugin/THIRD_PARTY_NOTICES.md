@@ -10,7 +10,7 @@ Repository: https://github.com/lidge-jun/opencodex
 
 ## CLIProxyAPI
 
-The native plugin ABI and host stream callback integration are implemented against CLIProxyAPI at commit `85d2faddd17e6f4f8675a84ee28b131f702e8eaa`.
+The native plugin ABI and host stream callback integration are implemented against CLIProxyAPI at commit `0a14eb70ce19fac1d114bcdb4a476d61adc819e2`.
 
 MIT License, Copyright (c) 2025-2005.9 Luis Pater and Copyright (c) 2025.9-present Router-For.ME.
 

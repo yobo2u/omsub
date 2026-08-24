@@ -136,7 +136,7 @@ func Test_Handler_Execute_returns_tool_call_and_forwards_tool_catalog(t *testing
 		} `json:"choices"`
 	}
 	require.NoError(t, json.Unmarshal(result.Payload, &completion))
-	require.Equal(t, canonicalToolCallID, completion.Choices[0].Message.ToolCalls[0].ID)
+	require.Equal(t, normalizedJoinedToolCallID, completion.Choices[0].Message.ToolCalls[0].ID)
 	require.Len(t, cursor.input.Tools, 1)
 	require.Len(t, cursor.input.Images, 1)
 }
@@ -164,7 +164,7 @@ func Test_Handler_ExecuteStream_emits_tool_call_and_tool_finish_reason(t *testin
 	require.NoError(t, emitter.closeError)
 	require.Len(t, emitter.payloads, 3)
 	require.Contains(t, string(emitter.payloads[0]), `"tool_calls"`)
-	require.Contains(t, string(emitter.payloads[0]), `"id":"`+canonicalToolCallID+`"`)
+	require.Contains(t, string(emitter.payloads[0]), `"id":"`+normalizedJoinedToolCallID+`"`)
 	require.NotContains(t, string(emitter.payloads[0]), `fc_`)
 	require.Contains(t, string(emitter.payloads[1]), `"finish_reason":"tool_calls"`)
 	require.Equal(t, "[DONE]", string(emitter.payloads[2]))
@@ -285,8 +285,9 @@ func (fakeCursorClient) DiscoverModels(context.Context, string) ([]string, error
 }
 
 const (
-	canonicalToolCallID = "call-550e8400-e29b-41d4-a716-446655440000-0"
-	joinedToolCallID    = canonicalToolCallID + "\nfc_550e8400-e29b-41d4-a716-446655440000_0"
+	upstreamToolCallID         = "call-550e8400-e29b-41d4-a716-446655440000-0"
+	joinedToolCallID           = upstreamToolCallID + "\nfc_550e8400-e29b-41d4-a716-446655440000_0"
+	normalizedJoinedToolCallID = "call_cursor_e34799599f4bb2bb19a2d487e5bd7a34889d0840aedc90589e89"
 )
 
 type captureEmitter struct {

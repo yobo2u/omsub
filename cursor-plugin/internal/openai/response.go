@@ -159,7 +159,7 @@ func (turn *Turn) validateOutput() error {
 	if turn.responseErr != nil {
 		return turn.responseErr
 	}
-	if turn.text == "" && len(turn.tools) == 0 {
+	if strings.TrimSpace(turn.text) == "" && len(turn.tools) == 0 {
 		return fmt.Errorf("Cursor response has no text or tool calls")
 	}
 	return nil
