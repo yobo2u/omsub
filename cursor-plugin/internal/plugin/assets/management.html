@@ -21,7 +21,7 @@
       --warning: #9a6700;
       --warning-surface: #fff8db;
       --danger: #b42318;
-      --focus: #60a5fa;
+      --focus: #1d4ed8;
       --shadow: 0 8px 24px rgba(23, 32, 42, .08);
       --space-1: 4px;
       --space-2: 8px;
@@ -115,6 +115,7 @@
     .model { display: flex; gap: var(--space-3); align-items: start; min-height: var(--control-size); padding: var(--space-3); border: var(--border-width) solid var(--border); border-radius: var(--radius-sm); background: var(--surface-muted); }
     .model input { margin-top: var(--space-1); }
     .model code { min-width: 0; overflow-wrap: normal; word-break: normal; font-size: var(--font-xs); }
+    .account-notice { margin-bottom: 0; text-align: right; }
     .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-4); }
     .empty { padding: var(--space-6); text-align: center; color: var(--muted); }
     @media (max-width: 720px) {
@@ -124,6 +125,8 @@
       .credential-grid button { width: 100%; }
       .header-row, .account-head { display: grid; }
       .language-field { width: 100%; }
+      .models { max-height: none; overflow: visible; }
+      .account-notice { text-align: left; }
       .actions button { width: 100%; }
     }
   </style>
@@ -145,7 +148,7 @@
     </header>
     <section class="panel warning" aria-labelledby="quota-title">
       <h2 id="quota-title" data-i18n="quotaTitle">订阅额度说明</h2>
-      <p><span data-i18n="quotaBodyPrefix">Cursor 未公开稳定的 OAuth </span><span class="nowrap" data-i18n="quotaBodyTerm">订阅剩余额度接口</span><span data-i18n="quotaAccuracyPrefix">。这里不会伪造</span><span class="nowrap" data-i18n="quotaAccuracyTerm">百分比</span><span data-i18n="quotaUsagePrefix">；仅显示插件进程启动后的</span><span class="nowrap" data-i18n="quotaUsageTerm">本地估算用量</span><span data-i18n="quotaUsageJoin">与</span><span class="nowrap" data-i18n="quotaStatusTerm">请求状态</span><span data-i18n="quotaBodySuffixPrefix">。缓存 Token 未知时会明确显示</span><span class="nowrap" data-i18n="quotaUnknownTerm">“未知”</span><span data-i18n="quotaBodySuffixSuffix">。</span></p>
+      <p><span data-i18n="quotaBodyPrefix">Cursor 未公开稳定的 OAuth </span><span class="nowrap" data-i18n="quotaBodyTerm">订阅剩余额度接口</span><span data-i18n="quotaAccuracyPrefix">。这里不会伪造</span><span class="nowrap" data-i18n="quotaAccuracyTerm">百分比</span><span data-i18n="quotaUsagePrefix">；仅显示插件进程启动后的</span><span class="nowrap" data-i18n="quotaUsageTerm">本地估算用量</span><span data-i18n="quotaUsageJoin">与</span><span class="nowrap" data-i18n="quotaStatusTerm">请求状态</span><span data-i18n="quotaBodySuffixPrefix">。缓存 Token 未知时会明确显示</span><span class="nowrap" data-i18n="quotaUnknownTerm">“未知”</span><span class="nowrap" data-i18n="quotaBodySuffixSuffix">。</span></p>
     </section>
     <section class="panel" aria-labelledby="credential-title">
       <div class="credential-grid">
@@ -184,7 +187,7 @@
           quotaUsageTerm: "本地估算用量",
           quotaUsageJoin: "与",
           quotaStatusTerm: "请求状态",
-          quotaBodySuffixPrefix: "。缓存 Token 未知时会明确显示",
+          quotaBodySuffixPrefix: "。缓\u2060存 Token 未\u2060知时会明确显\u2060示",
           quotaUnknownTerm: "“未知”",
           quotaBodySuffixSuffix: "。",
           managementKeyLabel: "管理密钥",
@@ -202,14 +205,14 @@
           cachedTokens: "缓存 Token",
           successfulRequests: "成功请求（最终）",
           failedRequests: "失败请求（最终）",
-          logicalRequestsHelp: "一次用户调用只计一个最终结果；检查点回退和宿主重试不会重复计入请求。Token 按插件实际执行次数估算。",
+          logicalRequestsHelp: "一次用户调用只计一个最终结果；检查点回\u2060退和宿主重试不会重复计入请求。Token 按插件实际执行次数估算。",
           hostSchedulerMetrics: "宿主调度指标",
-          hostSchedulerMetricsHelp: "由 CLIProxyAPI 汇总认证调度尝试；重试和回退会分别计数，因此不能与用户请求一一对应。",
+          hostSchedulerMetricsHelp: "由 CLIProxyAPI 汇总认证调度尝试；重试和回\u2060退会分别计数，因此不能与用户请求一一对应。",
           hostSchedulerStatus: "宿主状态",
           hostSuccessfulAttempts: "成功尝试",
           hostFailedAttempts: "失败尝试",
           checkpointMetrics: "检查点指标",
-          checkpointMetricsHelp: "仅汇总本插件进程内的命中、失效、回退、字节数和首 Token 延迟；不保存或显示会话标识、检查点或 Token 内容。",
+          checkpointMetricsHelp: "仅汇总本插件进程内的命中、失效、回\u2060退、字节数和首 Token 延迟；不保存或显\u2060示会话标识、检查点或 Token 内容。",
           checkpointHits: "检查点命中",
           checkpointMisses: "检查点未命中",
           checkpointInvalidations: "检查点失效",
@@ -275,7 +278,7 @@
           failedRequests: "Failed requests (terminal)",
           logicalRequestsHelp: "Each user call records one terminal outcome; checkpoint fallbacks and host retries are not double-counted as requests. Tokens are estimated per plugin executor run.",
           hostSchedulerMetrics: "Host scheduler metrics",
-          hostSchedulerMetricsHelp: "CLIProxyAPI scheduler attempts are shown separately. Retries and fallbacks each count as attempts, so they do not map one-to-one to user requests.",
+          hostSchedulerMetricsHelp: "CLIProxyAPI scheduler attempts are shown separately. Retries and fallbacks each count as attempts, so they do not map one\u2011to\u2011one to user requests.",
           hostSchedulerStatus: "Host status",
           hostSuccessfulAttempts: "Successful attempts",
           hostFailedAttempts: "Failed attempts",
@@ -291,8 +294,8 @@
           savingSettings: "Saving settings…",
           savedSettingsOne: "Settings saved. {count} model is disabled.",
           savedSettingsMany: "Settings saved. {count} models are disabled.",
-          modelLegendOne: "OAuth model controls ({count} available model)",
-          modelLegendMany: "OAuth model controls ({count} available models)",
+          modelLegendOne: "OAuth models to disable ({count} available model)",
+          modelLegendMany: "OAuth models to disable ({count} available models)",
           disableAll: "Disable all",
           allModelsSelectedOne: "Selected all {count} model. Save changes to apply.",
           allModelsSelectedMany: "Selected all {count} models. Save changes to apply.",
@@ -517,11 +520,25 @@
 
         const form = document.createElement("form");
         form.dataset.authIndex = account.auth_index;
+        const accountNotice = document.createElement("div");
+        accountNotice.className = "notice account-notice";
+        accountNotice.setAttribute("role", "status");
+        accountNotice.setAttribute("aria-live", "polite");
+        function setAccountNoticeKey(key, values = {}, kind = "") {
+          accountNotice.textContent = translate(key, values);
+          accountNotice.className = `notice account-notice ${kind}`.trim();
+          accountNotice.setAttribute("role", kind === "error" ? "alert" : "status");
+        }
+        function setAccountNoticeLiteral(message, kind = "") {
+          accountNotice.textContent = message;
+          accountNotice.className = `notice account-notice ${kind}`.trim();
+          accountNotice.setAttribute("role", kind === "error" ? "alert" : "status");
+        }
         form.addEventListener("submit", async (event) => {
           event.preventDefault();
           const button = form.querySelector('button[type="submit"]');
           button.disabled = true;
-          setNoticeKey("savingSettings");
+          setAccountNoticeKey("savingSettings");
           const selected = [...form.querySelectorAll("input[type=checkbox]:checked")].map((input) => input.value);
           try {
             await api(disabledPath, {
@@ -530,9 +547,9 @@
               body: JSON.stringify({ auth_index: account.auth_index, disabled_models: selected })
             });
             const noticeKey = countKey("savedSettingsOne", "savedSettingsMany", selected.length);
-            setNoticeKey(noticeKey, { count: selected.length }, "success");
+            setAccountNoticeKey(noticeKey, { count: selected.length }, "success");
           } catch (error) {
-            setNoticeLiteral(error instanceof Error ? error.message : translate("unexpectedError"), "error");
+            setAccountNoticeLiteral(error instanceof Error ? error.message : translate("unexpectedError"), "error");
           } finally {
             button.disabled = false;
           }
@@ -566,7 +583,7 @@
             checkbox.checked = true;
           }
           const noticeKey = countKey("allModelsSelectedOne", "allModelsSelectedMany", account.models.length);
-          setNoticeKey(noticeKey, { count: account.models.length });
+          setAccountNoticeKey(noticeKey, { count: account.models.length });
         });
         const save = document.createElement("button");
         save.className = "primary";
@@ -575,7 +592,7 @@
         save.textContent = translate("saveSettings");
         actions.append(save, disableAll);
         fieldset.append(legend, modelGrid);
-        form.append(fieldset, actions);
+        form.append(fieldset, accountNotice, actions);
         card.append(head, metrics, logicalHelp, hostMetrics, checkpointMetrics, form);
         return card;
       }
