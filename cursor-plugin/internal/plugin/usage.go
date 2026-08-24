@@ -53,7 +53,7 @@ func newUsageStore() *usageStore {
 		startedAt: time.Now().UTC(), byAuth: make(map[string]localUsageStatus),
 		requestAuth: make(map[requestKey]*list.Element), requestAuthOrder: list.New(),
 		requestCompletions: newRequestCompletionFilter(),
-		checkpoints:        newCheckpointMetrics(), now: func() time.Time { return time.Now().UTC() },
+		checkpoints:        newCheckpointMetrics(), now: time.Now,
 	}
 }
 
@@ -129,7 +129,8 @@ func (store *usageStore) completeRequest(requestID, authID string, selected bool
 	usage.Estimated = true
 	usage.Requests++
 	usage.LastOutcome = outcome
-	usage.UpdatedAt = &now
+	updatedAt := now.UTC()
+	usage.UpdatedAt = &updatedAt
 	if outcome == "succeeded" {
 		usage.Succeeded++
 	} else {
