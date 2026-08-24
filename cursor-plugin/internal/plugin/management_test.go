@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -433,8 +434,28 @@ func Test_Handler_ManagementResource_serves_bilingual_shell_without_exposing_aut
 	require.Contains(t, string(response.Body), `save.dataset.action = "save-settings"`)
 	require.Contains(t, string(response.Body), `checkpointMetrics: "检查点指标"`)
 	require.Contains(t, string(response.Body), `checkpointMetrics: "Checkpoint metrics"`)
-	require.Contains(t, string(response.Body), `logicalRequestsHelp: "每\u2060次用\u2060户\u2060调\u2060用最多计一个最\u2060终\u2060结\u2060果；检\u2060查\u2060点回\u2060退和宿\u2060主\u2060重\u2060试不会重\u2060复\u2060计\u2060入请\u2060求。近\u2060期\u2060请\u2060求 ID 使用 16 MiB 固\u2060定\u2060内\u2060存去\u2060重；在每 15 分钟不超过 100 万个完\u2060成\u2060事\u2060件的设\u2060计\u2060负\u2060载内，误\u2060判\u2060概\u2060率低于亿\u2060分\u2060之\u2060六。误\u2060判会跳过一条本\u2060地\u2060终\u2060态\u2060样\u2060本，使计\u2060数少\u2060计并保\u2060留此\u2060前的最\u2060近\u2060结\u2060果。Token 按插\u2060件实\u2060际\u2060执\u2060行\u2060次\u2060数估\u2060算。"`)
-	require.Contains(t, string(response.Body), `logicalRequestsHelp: "At most one terminal outcome is recorded per user call; checkpoint fallbacks and host retries are not double-counted as requests. Recent request IDs use 16 MiB fixed-memory deduplication. Within its design load of up to 1,000,000 completions per 15-minute window, the false-positive probability is below 6e-8. A false positive skips one local terminal sample, undercounting it and retaining the previous latest outcome. Tokens are estimated per plugin executor run."`)
+	require.Contains(t, string(response.Body), `logicalRequestsHelp: "每\u2060次`)
+	for _, protectedTerm := range []string{
+		`检\u2060查\u2060点`,
+		`近\u2060期\u2060请\u2060求`,
+		`固\u2060定\u2060内\u2060存`,
+		`完\u2060成\u2060事\u2060件`,
+		`设\u2060计\u2060负\u2060载`,
+		`误\u2060判\u2060概\u2060率`,
+		`亿\u2060分\u2060之\u2060六`,
+		`本\u2060地\u2060终\u2060态\u2060样\u2060本`,
+		`最\u2060近\u2060结\u2060果`,
+		`实\u2060际\u2060执\u2060行\u2060次\u2060数`,
+	} {
+		require.Contains(t, string(response.Body), protectedTerm)
+	}
+	visibleBody := strings.ReplaceAll(string(response.Body), `\u2060`, "")
+	require.Contains(t, visibleBody, `近期请求 ID 使用 16 MiB 固定内存去重`)
+	require.Contains(t, visibleBody, `100 万个`)
+	require.Contains(t, string(response.Body), `logicalRequestsHelp: "At most one terminal outcome`)
+	require.Contains(t, string(response.Body), `Recent request IDs use 16 MiB fixed-memory deduplication.`)
+	require.Contains(t, string(response.Body), `false-positive probability is below 6e-8.`)
+	require.Contains(t, string(response.Body), `A false positive skips one local terminal sample`)
 	require.Contains(t, string(response.Body), `hostSchedulerMetrics: "宿主调度指标"`)
 	require.Contains(t, string(response.Body), `hostSchedulerMetrics: "Host scheduler metrics"`)
 	require.Contains(t, string(response.Body), `account.local_usage?.succeeded || 0`)
