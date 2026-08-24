@@ -87,47 +87,78 @@ func (handler *Handler) managementStatus(ctx context.Context) (managementRespons
 		return managementError(http.StatusBadGateway, err.Error()), nil
 	}
 	status := cursorManagementStatus{Provider: "cursor", GeneratedAt: time.Now().UTC(), Accounts: make([]cursorAccountStatus, 0, len(files)), CheckpointMetrics: handler.usage.checkpoints.total()}
-	accountByIdentity := make(map[string]int, len(files))
-	for _, file := range files {
+	type authRecord struct {
+		file          hostAuthFile
+		credential    cursorauth.Credentials
+		credentialErr error
+	}
+	records := make([]authRecord, len(files))
+	parents := make([]int, len(files))
+	identityOwner := make(map[string]int, len(files))
+	findRoot := func(index int) int {
+		root := index
+		for parents[root] != root {
+			root = parents[root]
+		}
+		for parents[index] != index {
+			next := parents[index]
+			parents[index] = root
+			index = next
+		}
+		return root
+	}
+	union := func(left, right int) {
+		leftRoot := findRoot(left)
+		rightRoot := findRoot(right)
+		if leftRoot == rightRoot {
+			return
+		}
+		if leftRoot < rightRoot {
+			parents[rightRoot] = leftRoot
+			return
+		}
+		parents[leftRoot] = rightRoot
+	}
+	for index, file := range files {
+		parents[index] = index
 		credential, credentialErr := handler.getCursorCredential(ctx, file.AuthIndex)
 		identities := []string(nil)
 		if credentialErr == nil {
 			identities = cursorCredentialIdentities(credential)
-			duplicateIndex := -1
 			for _, identity := range identities {
-				if index, duplicate := accountByIdentity[identity]; duplicate {
-					duplicateIndex = index
-					break
+				if owner, exists := identityOwner[identity]; exists {
+					union(index, owner)
+				} else {
+					identityOwner[identity] = index
 				}
-			}
-			if duplicateIndex >= 0 {
-				mergeCursorAccountMetrics(&status.Accounts[duplicateIndex], file, handler.usage)
-				for _, identity := range identities {
-					accountByIdentity[identity] = duplicateIndex
-				}
-				continue
 			}
 		}
-		account, accountErr := handler.cursorAccountStatusWithCredential(ctx, file, credential, credentialErr)
+		records[index] = authRecord{file: file, credential: credential, credentialErr: credentialErr}
+	}
+	accountByRoot := make(map[int]int, len(files))
+	for index, record := range records {
+		root := findRoot(index)
+		if accountIndex, exists := accountByRoot[root]; exists {
+			mergeCursorAccountMetrics(&status.Accounts[accountIndex], record.file, handler.usage)
+			continue
+		}
+		account, accountErr := handler.cursorAccountStatusWithCredential(ctx, record.file, record.credential, record.credentialErr)
 		if accountErr != nil {
-			metricKey := cursorMetricKey(file)
+			metricKey := cursorMetricKey(record.file)
 			account = cursorAccountStatus{
-				AuthIndex:         file.AuthIndex,
-				Name:              file.Name,
-				Label:             file.Label,
+				AuthIndex:         record.file.AuthIndex,
+				Name:              record.file.Name,
+				Label:             record.file.Label,
 				Status:            "unavailable: " + accountErr.Error(),
-				HostRuntime:       cursorHostRuntime(file),
+				HostRuntime:       cursorHostRuntime(record.file),
 				SubscriptionQuota: cursorQuotaStatus{Status: "unavailable", Reason: quotaUnavailableReason},
 				LocalUsage:        handler.usage.snapshot(metricKey),
 				CheckpointMetrics: handler.usage.checkpoints.snapshot(metricKey),
 				Models:            []cursorModelStatus{},
 			}
 		}
-		accountIndex := len(status.Accounts)
+		accountByRoot[root] = len(status.Accounts)
 		status.Accounts = append(status.Accounts, account)
-		for _, identity := range identities {
-			accountByIdentity[identity] = accountIndex
-		}
 	}
 	return managementJSON(http.StatusOK, status)
 }

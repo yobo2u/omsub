@@ -140,6 +140,41 @@ func Test_Handler_ManagementStatus_deduplicates_same_email_with_different_accoun
 	require.Equal(t, "error", account.Status)
 }
 
+func Test_Handler_ManagementStatus_merges_transitively_bridged_cursor_identities(t *testing.T) {
+	first, err := cursorauth.MarshalCredentials(cursorauth.Credentials{
+		AccessToken: "access-1", RefreshToken: "refresh-1", AccountID: "account-a", Email: "first@example.test", Type: "cursor",
+	})
+	require.NoError(t, err)
+	second, err := cursorauth.MarshalCredentials(cursorauth.Credentials{
+		AccessToken: "access-2", RefreshToken: "refresh-2", AccountID: "account-b", Email: "second@example.test", Type: "cursor",
+	})
+	require.NoError(t, err)
+	bridge, err := cursorauth.MarshalCredentials(cursorauth.Credentials{
+		AccessToken: "access-3", RefreshToken: "refresh-3", AccountID: "account-a", Email: "second@example.test", Type: "cursor",
+	})
+	require.NoError(t, err)
+	host := &fakeHostCaller{
+		listJSON: json.RawMessage(`{"files":[
+			{"auth_index":"cursor-auth-1","name":"cursor-auth-1.json","type":"cursor","provider":"cursor","status":"active","success":1},
+			{"auth_index":"cursor-auth-2","name":"cursor-auth-2.json","type":"cursor","provider":"cursor","status":"active","success":2},
+			{"auth_index":"cursor-auth-bridge","name":"cursor-auth-bridge.json","type":"cursor","provider":"cursor","status":"active","success":3}
+		]}`),
+		credentialJSONByIndex: map[string]json.RawMessage{
+			"cursor-auth-1": first, "cursor-auth-2": second, "cursor-auth-bridge": bridge,
+		},
+	}
+	handler := NewHandler(Dependencies{Cursor: fakeModelCursorClient{models: []string{"auto"}}, Host: host})
+
+	response, err := handler.managementStatus(context.Background())
+
+	require.NoError(t, err)
+	var status cursorManagementStatus
+	require.NoError(t, json.Unmarshal(response.Body, &status))
+	require.Len(t, status.Accounts, 1)
+	require.Equal(t, "cursor-auth-1", status.Accounts[0].AuthIndex)
+	require.EqualValues(t, 6, status.Accounts[0].HostRuntime.SuccessAttempts)
+}
+
 func Test_Handler_ManagementStatus_ignores_stale_memory_only_cursor_record(t *testing.T) {
 	// Given
 	persisted, err := cursorauth.MarshalCredentials(cursorauth.Credentials{
