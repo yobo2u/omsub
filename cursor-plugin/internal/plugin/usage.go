@@ -10,13 +10,20 @@ import (
 )
 
 const (
-	requestAuthTTL      = 15 * time.Minute
-	requestAuthCapacity = 4096
+	requestAuthTTL            = 15 * time.Minute
+	requestAuthCapacity       = 4096
+	requestCompletionTTL      = 15 * time.Minute
+	requestCompletionCapacity = 4096
 )
 
 type requestAuthEntry struct {
 	key       string
 	authID    string
+	expiresAt time.Time
+}
+
+type requestCompletionEntry struct {
+	key       string
 	expiresAt time.Time
 }
 
@@ -36,19 +43,22 @@ type localUsageStatus struct {
 }
 
 type usageStore struct {
-	mu               sync.RWMutex
-	startedAt        time.Time
-	byAuth           map[string]localUsageStatus
-	requestAuth      map[string]*list.Element
-	requestAuthOrder *list.List
-	checkpoints      *checkpointMetrics
-	now              func() time.Time
+	mu                     sync.RWMutex
+	startedAt              time.Time
+	byAuth                 map[string]localUsageStatus
+	requestAuth            map[string]*list.Element
+	requestAuthOrder       *list.List
+	requestCompletions     map[string]*list.Element
+	requestCompletionOrder *list.List
+	checkpoints            *checkpointMetrics
+	now                    func() time.Time
 }
 
 func newUsageStore() *usageStore {
 	return &usageStore{
 		startedAt: time.Now().UTC(), byAuth: make(map[string]localUsageStatus),
 		requestAuth: make(map[string]*list.Element), requestAuthOrder: list.New(),
+		requestCompletions: make(map[string]*list.Element), requestCompletionOrder: list.New(),
 		checkpoints: newCheckpointMetrics(), now: func() time.Time { return time.Now().UTC() },
 	}
 }
@@ -81,6 +91,10 @@ func (store *usageStore) selectRequestAuth(requestID, authID string) {
 	defer store.mu.Unlock()
 	now := store.now()
 	store.expireRequestAuthLocked(now)
+	store.expireRequestCompletionsLocked(now)
+	if store.requestCompletions[key] != nil {
+		return
+	}
 	store.removeRequestAuthLocked(key)
 	if authID == "" {
 		return
@@ -101,11 +115,16 @@ func (store *usageStore) completeRequest(requestID, authID string, selected bool
 	defer store.mu.Unlock()
 	now := store.now()
 	store.expireRequestAuthLocked(now)
+	store.expireRequestCompletionsLocked(now)
+	if store.requestCompletions[key] != nil {
+		return
+	}
 	trackedAuthID := ""
 	if element := store.requestAuth[key]; element != nil {
 		trackedAuthID = element.Value.(requestAuthEntry).authID
 	}
 	store.removeRequestAuthLocked(key)
+	store.rememberRequestCompletionLocked(key, now)
 	if !selected {
 		authID = trackedAuthID
 	}
@@ -159,6 +178,34 @@ func (store *usageStore) removeRequestAuthLocked(key string) {
 	}
 	delete(store.requestAuth, key)
 	store.requestAuthOrder.Remove(element)
+}
+
+func (store *usageStore) rememberRequestCompletionLocked(key string, now time.Time) {
+	for len(store.requestCompletions) >= requestCompletionCapacity {
+		store.removeOldestRequestCompletionLocked()
+	}
+	entry := requestCompletionEntry{key: key, expiresAt: now.Add(requestCompletionTTL)}
+	store.requestCompletions[key] = store.requestCompletionOrder.PushBack(entry)
+}
+
+func (store *usageStore) expireRequestCompletionsLocked(now time.Time) {
+	for {
+		oldest := store.requestCompletionOrder.Front()
+		if oldest == nil || oldest.Value.(requestCompletionEntry).expiresAt.After(now) {
+			return
+		}
+		store.removeOldestRequestCompletionLocked()
+	}
+}
+
+func (store *usageStore) removeOldestRequestCompletionLocked() {
+	oldest := store.requestCompletionOrder.Front()
+	if oldest == nil {
+		return
+	}
+	entry := oldest.Value.(requestCompletionEntry)
+	delete(store.requestCompletions, entry.key)
+	store.requestCompletionOrder.Remove(oldest)
 }
 
 func (store *usageStore) snapshot(authID string) localUsageStatus {
