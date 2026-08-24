@@ -1,11 +1,24 @@
 package plugin
 
 import (
+	"container/list"
+	"crypto/sha256"
 	"sync"
 	"time"
 
 	"cursorplugin/internal/openai"
 )
+
+const (
+	requestAuthTTL      = 15 * time.Minute
+	requestAuthCapacity = 4096
+)
+
+type requestAuthEntry struct {
+	key       string
+	authID    string
+	expiresAt time.Time
+}
 
 type localUsageStatus struct {
 	Scope        string     `json:"scope"`
@@ -23,17 +36,20 @@ type localUsageStatus struct {
 }
 
 type usageStore struct {
-	mu          sync.RWMutex
-	startedAt   time.Time
-	byAuth      map[string]localUsageStatus
-	requestAuth map[string]string
-	checkpoints *checkpointMetrics
+	mu               sync.RWMutex
+	startedAt        time.Time
+	byAuth           map[string]localUsageStatus
+	requestAuth      map[string]*list.Element
+	requestAuthOrder *list.List
+	checkpoints      *checkpointMetrics
+	now              func() time.Time
 }
 
 func newUsageStore() *usageStore {
 	return &usageStore{
 		startedAt: time.Now().UTC(), byAuth: make(map[string]localUsageStatus),
-		requestAuth: make(map[string]string), checkpoints: newCheckpointMetrics(),
+		requestAuth: make(map[string]*list.Element), requestAuthOrder: list.New(),
+		checkpoints: newCheckpointMetrics(), now: func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -60,24 +76,36 @@ func (store *usageStore) selectRequestAuth(requestID, authID string) {
 	if requestID == "" {
 		return
 	}
+	key := requestAuthKey(requestID)
 	store.mu.Lock()
 	defer store.mu.Unlock()
+	now := store.now()
+	store.expireRequestAuthLocked(now)
+	store.removeRequestAuthLocked(key)
 	if authID == "" {
-		delete(store.requestAuth, requestID)
 		return
 	}
-	store.requestAuth[requestID] = authID
+	for len(store.requestAuth) >= requestAuthCapacity {
+		store.removeOldestRequestAuthLocked()
+	}
+	entry := requestAuthEntry{key: key, authID: authID, expiresAt: now.Add(requestAuthTTL)}
+	store.requestAuth[key] = store.requestAuthOrder.PushBack(entry)
 }
 
 func (store *usageStore) completeRequest(requestID, authID string, selected bool, outcome string) {
 	if requestID == "" {
 		return
 	}
-	now := time.Now().UTC()
+	key := requestAuthKey(requestID)
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	trackedAuthID := store.requestAuth[requestID]
-	delete(store.requestAuth, requestID)
+	now := store.now()
+	store.expireRequestAuthLocked(now)
+	trackedAuthID := ""
+	if element := store.requestAuth[key]; element != nil {
+		trackedAuthID = element.Value.(requestAuthEntry).authID
+	}
+	store.removeRequestAuthLocked(key)
 	if !selected {
 		authID = trackedAuthID
 	}
@@ -97,6 +125,40 @@ func (store *usageStore) completeRequest(requestID, authID string, selected bool
 		usage.Failed++
 	}
 	store.byAuth[authID] = usage
+}
+
+func requestAuthKey(requestID string) string {
+	digest := sha256.Sum256([]byte(requestID))
+	return string(digest[:])
+}
+
+func (store *usageStore) expireRequestAuthLocked(now time.Time) {
+	for {
+		oldest := store.requestAuthOrder.Front()
+		if oldest == nil || oldest.Value.(requestAuthEntry).expiresAt.After(now) {
+			return
+		}
+		store.removeOldestRequestAuthLocked()
+	}
+}
+
+func (store *usageStore) removeOldestRequestAuthLocked() {
+	oldest := store.requestAuthOrder.Front()
+	if oldest == nil {
+		return
+	}
+	entry := oldest.Value.(requestAuthEntry)
+	delete(store.requestAuth, entry.key)
+	store.requestAuthOrder.Remove(oldest)
+}
+
+func (store *usageStore) removeRequestAuthLocked(key string) {
+	element := store.requestAuth[key]
+	if element == nil {
+		return
+	}
+	delete(store.requestAuth, key)
+	store.requestAuthOrder.Remove(element)
 }
 
 func (store *usageStore) snapshot(authID string) localUsageStatus {

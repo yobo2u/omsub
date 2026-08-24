@@ -10,6 +10,7 @@ binary=${CURSOR_PLUGIN_BINARY:-"$project_dir/cursor.so"}
 [ -f "$binary" ] || { echo "set CURSOR_PLUGIN_BINARY to a Linux amd64 cursor.so" >&2; exit 1; }
 
 asset_name="cursor_${version}_linux_amd64.zip"
+manual_asset="cursor-plugin-${version}-linux-amd64.tar.gz"
 staging=$(mktemp -d)
 trap 'rm -rf "$staging"' EXIT HUP INT TERM
 mkdir -p "$output_dir"
@@ -18,9 +19,17 @@ install -m 0755 "$binary" "$staging/cursor.so"
 (cd "$staging" && zip -q "$output_dir/$asset_name" cursor.so)
 
 if command -v sha256sum >/dev/null 2>&1; then
-	(cd "$output_dir" && sha256sum "$asset_name" > checksums.txt)
+	if [ -f "$output_dir/$manual_asset" ]; then
+		(cd "$output_dir" && sha256sum "$asset_name" "$manual_asset" > checksums.txt)
+	else
+		(cd "$output_dir" && sha256sum "$asset_name" > checksums.txt)
+	fi
 else
-	(cd "$output_dir" && shasum -a 256 "$asset_name" > checksums.txt)
+	if [ -f "$output_dir/$manual_asset" ]; then
+		(cd "$output_dir" && shasum -a 256 "$asset_name" "$manual_asset" > checksums.txt)
+	else
+		(cd "$output_dir" && shasum -a 256 "$asset_name" > checksums.txt)
+	fi
 fi
 
 echo "$output_dir/$asset_name"
