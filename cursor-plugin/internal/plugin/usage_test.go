@@ -96,12 +96,8 @@ func TestUsageStore_BoundsCompletedRequestDeduplicationUnderConcurrentTraffic(t 
 	}
 	workers.Wait()
 
-	store.mu.RLock()
-	completed := len(store.requestCompletions)
-	ordered := store.requestCompletionOrder.Len()
-	store.mu.RUnlock()
-	require.Equal(t, requestCompletionCapacity, completed)
-	require.Equal(t, completed, ordered)
+	require.Len(t, store.requestCompletions.current, requestCompletionWords)
+	require.Len(t, store.requestCompletions.previous, requestCompletionWords)
 	require.EqualValues(t, requests, store.snapshot("cursor-account.json").Requests)
 }
 
@@ -111,17 +107,12 @@ func TestUsageStore_ExpiresCompletedRequestDeduplication(t *testing.T) {
 	store.now = func() time.Time { return now }
 
 	store.completeRequest("expired", "cursor-account.json", true, "succeeded")
-	now = now.Add(requestCompletionTTL + time.Second)
+	now = now.Add(requestCompletionWindow + time.Second)
 	store.completeRequest("current", "cursor-account.json", true, "succeeded")
 
-	store.mu.RLock()
-	completed := len(store.requestCompletions)
-	ordered := store.requestCompletionOrder.Len()
-	_, expiredPresent := store.requestCompletions[requestAuthKey("expired")]
-	store.mu.RUnlock()
-	require.Equal(t, 1, completed)
-	require.Equal(t, completed, ordered)
-	require.False(t, expiredPresent)
+	require.True(t, store.requestCompletions.contains(requestAuthKey("expired"), now))
+	now = now.Add(requestCompletionWindow + time.Second)
+	require.False(t, store.requestCompletions.contains(requestAuthKey("expired"), now))
 }
 
 func TestUsageStore_FirstCompletionWithoutAuthRemainsTerminal(t *testing.T) {
@@ -131,4 +122,32 @@ func TestUsageStore_FirstCompletionWithoutAuthRemainsTerminal(t *testing.T) {
 	store.completeRequest("request", "cursor-account.json", true, "succeeded")
 
 	require.Zero(t, store.snapshot("cursor-account.json").Requests)
+}
+
+func TestUsageStore_DeduplicatesCompletionAfterCapacityPressure(t *testing.T) {
+	store := newUsageStore()
+	store.completeRequest("oldest", "cursor-account.json", true, "succeeded")
+	for index := 0; index < 10_000; index++ {
+		store.completeRequest(fmt.Sprintf("newer-%d", index), "cursor-account.json", true, "succeeded")
+	}
+	expected := store.snapshot("cursor-account.json").Requests
+
+	store.completeRequest("oldest", "cursor-account.json", true, "succeeded")
+
+	require.Equal(t, expected, store.snapshot("cursor-account.json").Requests)
+}
+
+func TestUsageStore_DeduplicatesConcurrentCompletionCallbacks(t *testing.T) {
+	store := newUsageStore()
+	var workers sync.WaitGroup
+	for worker := 0; worker < 100; worker++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			store.completeRequest("request", "cursor-account.json", true, "succeeded")
+		}()
+	}
+	workers.Wait()
+
+	require.EqualValues(t, 1, store.snapshot("cursor-account.json").Requests)
 }
