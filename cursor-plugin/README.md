@@ -24,7 +24,7 @@
 当前商店发布物仅支持 Linux amd64：
 
 ```text
-cursor_0.5.8_linux_amd64.zip
+cursor_0.5.9_linux_amd64.zip
 checksums.txt
 ```
 
@@ -33,8 +33,8 @@ checksums.txt
 解压发布包，然后把 `--plugins-dir` 指向 CLIProxyAPI 配置中的 `plugins.dir`：
 
 ```sh
-tar -xzf cursor-plugin-0.5.8-linux-amd64.tar.gz
-cd cursor-plugin-0.5.8-linux-amd64
+tar -xzf cursor-plugin-0.5.9-linux-amd64.tar.gz
+cd cursor-plugin-0.5.9-linux-amd64
 sudo ./install.sh --plugins-dir /opt/cpa-manager-plus/cliproxyapi/plugins
 ```
 
@@ -98,15 +98,18 @@ sudo ./uninstall.sh --plugins-dir /opt/cpa-manager-plus/cliproxyapi/plugins
 - 支持标准 function tools、`tool_choice`、多工具调用、assistant `tool_calls` 历史和 tool 结果续轮；工具目录通过 Cursor 原生 `mcp_tools` 注册，结果转换为 OpenAI 兼容 `tool_calls`。
 - 支持 `image_url` / `input_image` 内联 data URL，以及 `file` / `input_file` 的图片或 UTF-8 文本附件；图片和文件通过 Cursor 原生 `selected_context` 发送，tool 结果中的图片也能随续轮送达。
 - 为避免服务端请求伪造，远程图片 URL 不由插件下载；调用方应传内联 data URL。仅有 `file_id` 而没有 `file_data` 的附件无法由独立插件解析。
-- v0.5.8 的会话检查点仅在插件进程内保存，并按账户、模型和会话严格隔离。仅追加式线性历史会尝试续传；分支、编辑、压缩、过期、重启或状态异常时会安全回退为完整重放；checkpoint 续传在尚未暴露文本、工具调用或工具结果时，如收到无输出的干净 EndStream 或 Connect `internal` 错误，仅安全重试一次完整重放。
+- v0.5.9 会在 OpenAI 兼容输出边界规范化 Cursor 工具调用 ID：保持调用与结果引用一致，禁止控制字符，最大 64 字节，并在规范化冲突时生成稳定无碰撞 ID；已有合法 ID 不会被改写。
+- 真正为空且不含工具调用的 assistant 历史会被过滤，成功但没有文本或工具调用的 Cursor 响应会明确失败；合法的 tool-only assistant 消息保持不变。
+- 会话检查点仅在插件进程内保存，并按账户、模型和会话严格隔离。仅追加式线性历史会尝试续传；分支、编辑、压缩、过期、重启或状态异常时会安全回退为完整重放；checkpoint 续传在尚未暴露文本、工具调用或工具结果时，如收到无输出的干净 EndStream 或 Connect `internal` 错误，仅安全重试一次完整重放。
 - 检查点的上限为 15 分钟 TTL、64 条和 16 MiB；进程重启后不保留。原始检查点、凭据和管理密钥不会写入浏览器存储、宿主 metadata、日志或发布证据。
 - 暂不直接实现 Responses API；CLIProxyAPI 可按其 executor 翻译能力把其他协议转换到插件声明的 `chat-completions` 输入输出格式。
 - Cursor 没有公开、稳定的 OAuth 订阅剩余额度接口；管理页不会伪造百分比或余额。
-- token usage 为插件运行期内的本地估算值，不代表 Cursor 账单或订阅额度，进程重启后重新计数。
+- 成功/失败请求来自 CLIProxyAPI 的 `request.complete` 终态回调；同一用户请求即使发生宿主重试，也只记录一次最终结果。宿主自身的成功/失败值按“调度尝试”单独展示。
+- token usage 为每次 Cursor 插件执行的本地估算值（包括宿主重试触发的再次执行），不代表 Cursor 账单或订阅额度，进程重启后重新计数。
 - 当前发布包只提供 Linux amd64；其他平台需要对应平台的 CGO 工具链重新构建。
 
 CLIProxyAPI 动态库插件是进程内受信代码。请只安装来自可信来源且校验过 `SHA256SUMS` 的构建。使用时应遵守 Cursor 的服务条款和可接受使用政策，不应共享账号、转售访问或规避配额与安全控制。
 
 ## 来源
 
-Cursor 协议实现参考 [opencodex](https://github.com/lidge-jun/opencodex) 提交 `5840591322117f3ee9568b35b135a6d4339f7711`；插件 ABI 参考 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) 提交 `85d2faddd17e6f4f8675a84ee28b131f702e8eaa`。两者均采用 MIT 许可证，详见 `THIRD_PARTY_NOTICES.md`。
+Cursor 协议实现参考 [opencodex](https://github.com/lidge-jun/opencodex) 提交 `5840591322117f3ee9568b35b135a6d4339f7711`；插件 ABI 参考 [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI) v7.2.139 提交 `0a14eb70ce19fac1d114bcdb4a476d61adc819e2`。两者均采用 MIT 许可证，详见 `THIRD_PARTY_NOTICES.md`。

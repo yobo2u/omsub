@@ -5,16 +5,19 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
 
 type Turn struct {
-	id      string
-	model   string
-	created int64
-	text    string
-	tools   []responseToolCall
+	id           string
+	model        string
+	created      int64
+	text         string
+	tools        []responseToolCall
+	toolIDOwners map[string]string
+	responseErr  error
 }
 
 type Usage struct {
@@ -77,6 +80,10 @@ func (turn *Turn) StreamChunk(text string) ([]byte, error) {
 }
 
 func (turn *Turn) StreamToolCall(id, name, arguments string) ([]byte, error) {
+	id, err := turn.reserveToolCallID(id)
+	if err != nil {
+		return nil, err
+	}
 	index := len(turn.tools)
 	call := responseToolCall{
 		ID: id, Type: "function", Function: responseToolFunction{Name: name, Arguments: arguments},
@@ -92,6 +99,9 @@ func (turn *Turn) StreamToolCall(id, name, arguments string) ([]byte, error) {
 }
 
 func (turn *Turn) FinalChunk(prompt string) ([]byte, error) {
+	if err := turn.validateOutput(); err != nil {
+		return nil, err
+	}
 	finish := turn.finishReason()
 	payload := chatCompletion{
 		ID:      turn.id,
@@ -99,12 +109,15 @@ func (turn *Turn) FinalChunk(prompt string) ([]byte, error) {
 		Created: turn.created,
 		Model:   turn.model,
 		Choices: []completionChoice{{Index: 0, Delta: &assistantMessage{}, FinishReason: &finish}},
-		Usage:   estimatedUsage(prompt, turn.text),
+		Usage:   turn.EstimatedUsage(prompt),
 	}
 	return marshalStreamPayload(payload)
 }
 
 func (turn *Turn) Completion(prompt string) ([]byte, error) {
+	if err := turn.validateOutput(); err != nil {
+		return nil, err
+	}
 	finish := turn.finishReason()
 	payload := chatCompletion{
 		ID:      turn.id,
@@ -116,7 +129,7 @@ func (turn *Turn) Completion(prompt string) ([]byte, error) {
 			Message:      &assistantMessage{Role: "assistant", Content: turn.text, ToolCalls: turn.tools},
 			FinishReason: &finish,
 		}},
-		Usage: estimatedUsage(prompt, turn.text),
+		Usage: turn.EstimatedUsage(prompt),
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
@@ -130,9 +143,37 @@ func (turn *Turn) AddText(text string) {
 }
 
 func (turn *Turn) AddToolCall(id, name, arguments string) {
+	id, err := turn.reserveToolCallID(id)
+	if err != nil {
+		if turn.responseErr == nil {
+			turn.responseErr = err
+		}
+		return
+	}
 	turn.tools = append(turn.tools, responseToolCall{
 		ID: id, Type: "function", Function: responseToolFunction{Name: name, Arguments: arguments},
 	})
+}
+
+func (turn *Turn) validateOutput() error {
+	if turn.responseErr != nil {
+		return turn.responseErr
+	}
+	if turn.text == "" && len(turn.tools) == 0 {
+		return fmt.Errorf("Cursor response has no text or tool calls")
+	}
+	return nil
+}
+
+func (turn *Turn) EstimatedUsage(prompt string) Usage {
+	var completion strings.Builder
+	completion.WriteString(turn.text)
+	for _, call := range turn.tools {
+		completion.WriteString(call.ID)
+		completion.WriteString(call.Function.Name)
+		completion.WriteString(call.Function.Arguments)
+	}
+	return estimatedUsage(prompt, completion.String())
 }
 
 func (turn *Turn) finishReason() string {

@@ -30,6 +30,7 @@ Preserve the compact, neutral system-tool character of CLIProxyAPI's own plugin 
 - `Field`: label, password input, helper text, focus-visible state.
 - `Button`: primary, secondary, loading, disabled, focus-visible states.
 - `Metric`: label and monospace value.
+- `MetricSection`: heading, explanatory copy, and an intrinsic metric grid. Logical request outcomes, host scheduler attempts, and checkpoint telemetry are separate sections and are never merged.
 - `ModelOption`: checked, unchecked, keyboard-focus, disabled states.
 - `Notice`: information, success, and error states with `role=status` or `role=alert`.
 - `LanguageSelect`: native select with Chinese and English options, keyboard focus, and persisted preference.
@@ -43,6 +44,7 @@ Preserve the compact, neutral system-tool character of CLIProxyAPI's own plugin 
 - Buttons expose loading and disabled states; completion is announced to assistive technology.
 - The initial language follows a previously saved preference, then the browser language, with English as the fallback.
 - Changing language immediately updates static copy, dynamic account cards, notices, the document title, and the document language. Only the language preference is persisted.
+- Account labels, credential filenames, and model IDs are host-provided identity data and remain verbatim; only interface copy is localized.
 - No decorative animation. Reduced-motion users receive the same instantaneous state changes.
 
 ## 7. Accessibility
@@ -50,6 +52,7 @@ Preserve the compact, neutral system-tool character of CLIProxyAPI's own plugin 
 - Semantic headings, labels, fieldsets, legends, and buttons.
 - Visible keyboard focus and minimum 44 px interactive height.
 - Status is not conveyed by color alone.
+- The account status pill represents the plugin's latest terminal request outcome (or credential readiness before the first request). Raw CLIProxyAPI scheduler state is labelled separately.
 - The language selector uses a native labelled control, and `<html lang>` always matches the displayed language.
 - Chinese copy uses natural line breaks; model IDs may break only at safe punctuation.
 - English copy uses concise operational language and remains readable without horizontal scrolling.
@@ -57,6 +60,8 @@ Preserve the compact, neutral system-tool character of CLIProxyAPI's own plugin 
 ## 8. Accepted debt
 
 - Cursor does not publish a stable OAuth subscription remaining-quota API. The page therefore displays an unavailable state and local estimated usage instead of a fabricated remainder.
+- CLIProxyAPI success and failure counters represent scheduler attempts, including retries and fallbacks. They are displayed as host attempts, never as user request totals.
+- Logical request outcomes and Token estimates are process-local and reset when the plugin process restarts. Request outcomes come from the host's exactly-once lifecycle completion callback; Token estimates accumulate per plugin executor run.
 - The standalone page asks for the management key because plugin browser resources are intentionally unauthenticated by the host and cannot safely mutate state by themselves.
 
 ## Reference

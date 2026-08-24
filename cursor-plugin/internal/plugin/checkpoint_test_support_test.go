@@ -159,3 +159,22 @@ func replayBytes(input cursorapi.RunInput) int {
 func textMessage(role, content string) map[string]any {
 	return map[string]any{"role": role, "content": content}
 }
+
+func observeRequestAuth(t *testing.T, handler *Handler, requestID, authID string) {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{
+		"RequestID": requestID,
+		"Metadata":  map[string]any{"selected_auth_id": authID},
+	})
+	require.NoError(t, err)
+	_, err = handler.dispatch(context.Background(), "request.intercept_after", raw)
+	require.NoError(t, err)
+}
+
+func completeCursorRequest(t *testing.T, handler *Handler, requestID, outcome string) {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{"RequestID": requestID, "Outcome": outcome})
+	require.NoError(t, err)
+	_, err = handler.dispatch(context.Background(), "request.complete", raw)
+	require.NoError(t, err)
+}

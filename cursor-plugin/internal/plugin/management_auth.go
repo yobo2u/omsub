@@ -15,17 +15,27 @@ import (
 const quotaUnavailableReason = "Cursor does not publish a subscription remaining-quota API"
 
 type hostAuthFile struct {
-	AuthIndex   string `json:"auth_index"`
-	Name        string `json:"name"`
-	Path        string `json:"path"`
-	Source      string `json:"source"`
-	Type        string `json:"type"`
-	Provider    string `json:"provider"`
-	Label       string `json:"label"`
-	Status      string `json:"status"`
-	Success     int64  `json:"success"`
-	Failed      int64  `json:"failed"`
-	RuntimeOnly bool   `json:"runtime_only"`
+	ID            string `json:"id"`
+	AuthIndex     string `json:"auth_index"`
+	Name          string `json:"name"`
+	Path          string `json:"path"`
+	Source        string `json:"source"`
+	Type          string `json:"type"`
+	Provider      string `json:"provider"`
+	Label         string `json:"label"`
+	Status        string `json:"status"`
+	StatusMessage string `json:"status_message"`
+	Success       int64  `json:"success"`
+	Failed        int64  `json:"failed"`
+	RuntimeOnly   bool   `json:"runtime_only"`
+}
+
+type hostRuntimeStatus struct {
+	Scope           string `json:"scope"`
+	Status          string `json:"status"`
+	StatusMessage   string `json:"status_message,omitempty"`
+	SuccessAttempts int64  `json:"success_attempts"`
+	FailedAttempts  int64  `json:"failed_attempts"`
 }
 
 type hostAuthListResponse struct {
@@ -53,8 +63,7 @@ type cursorAccountStatus struct {
 	Name              string                 `json:"name"`
 	Label             string                 `json:"label"`
 	Status            string                 `json:"status"`
-	Success           int64                  `json:"success"`
-	Failed            int64                  `json:"failed"`
+	HostRuntime       hostRuntimeStatus      `json:"host_runtime"`
 	SubscriptionQuota cursorQuotaStatus      `json:"subscription_quota"`
 	LocalUsage        localUsageStatus       `json:"local_usage"`
 	CheckpointMetrics checkpointMetricStatus `json:"checkpoint_metrics"`
@@ -96,13 +105,16 @@ func (handler *Handler) managementStatus(ctx context.Context) (managementRespons
 		}
 		account, accountErr := handler.cursorAccountStatusWithCredential(ctx, file, credential, credentialErr)
 		if accountErr != nil {
+			metricKey := cursorMetricKey(file)
 			account = cursorAccountStatus{
 				AuthIndex:         file.AuthIndex,
 				Name:              file.Name,
 				Label:             file.Label,
 				Status:            "unavailable: " + accountErr.Error(),
+				HostRuntime:       cursorHostRuntime(file),
 				SubscriptionQuota: cursorQuotaStatus{Status: "unavailable", Reason: quotaUnavailableReason},
-				CheckpointMetrics: handler.usage.checkpoints.snapshot(file.AuthIndex),
+				LocalUsage:        handler.usage.snapshot(metricKey),
+				CheckpointMetrics: handler.usage.checkpoints.snapshot(metricKey),
 				Models:            []cursorModelStatus{},
 			}
 		}
@@ -129,18 +141,44 @@ func (handler *Handler) cursorAccountStatusWithCredential(ctx context.Context, f
 		_, blocked := disabled[id]
 		items = append(items, cursorModelStatus{ID: id, Disabled: blocked})
 	}
+	metricKey := cursorMetricKey(file)
+	localUsage := handler.usage.snapshot(metricKey)
 	return cursorAccountStatus{
 		AuthIndex:         file.AuthIndex,
 		Name:              file.Name,
 		Label:             file.Label,
-		Status:            file.Status,
-		Success:           file.Success,
-		Failed:            file.Failed,
+		Status:            cursorPluginStatus(file.Status, localUsage.LastOutcome),
+		HostRuntime:       cursorHostRuntime(file),
 		SubscriptionQuota: cursorQuotaStatus{Status: "unavailable", Reason: quotaUnavailableReason},
-		LocalUsage:        handler.usage.snapshot(file.AuthIndex),
-		CheckpointMetrics: handler.usage.checkpoints.snapshot(file.AuthIndex),
+		LocalUsage:        localUsage,
+		CheckpointMetrics: handler.usage.checkpoints.snapshot(metricKey),
 		Models:            items,
 	}, nil
+}
+
+func cursorMetricKey(file hostAuthFile) string {
+	if id := strings.TrimSpace(file.ID); id != "" {
+		return id
+	}
+	return file.AuthIndex
+}
+
+func cursorHostRuntime(file hostAuthFile) hostRuntimeStatus {
+	return hostRuntimeStatus{
+		Scope: "cli_proxy_process", Status: file.Status, StatusMessage: file.StatusMessage,
+		SuccessAttempts: file.Success, FailedAttempts: file.Failed,
+	}
+}
+
+func cursorPluginStatus(hostStatus, lastOutcome string) string {
+	switch strings.ToLower(strings.TrimSpace(hostStatus)) {
+	case "disabled", "inactive":
+		return strings.ToLower(strings.TrimSpace(hostStatus))
+	}
+	if lastOutcome != "" && lastOutcome != "succeeded" {
+		return "error"
+	}
+	return "active"
 }
 
 func cursorCredentialIdentities(credential cursorauth.Credentials) []string {

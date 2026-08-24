@@ -62,6 +62,35 @@ func Test_ParseChatRequest_accepts_opencode_options_tools_and_attachments(t *tes
 	require.Contains(t, request.Prompt, "contents")
 }
 
+func Test_ParseChatRequest_ignores_truly_empty_assistant_history(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{name: "missing content"},
+		{name: "null content", content: `,"content":null`},
+		{name: "empty string", content: `,"content":""`},
+		{name: "blank string", content: `,"content":"  "`},
+		{name: "empty parts", content: `,"content":[]`},
+		{name: "empty text part", content: `,"content":[{"type":"text","text":""}]`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// Given
+			raw := []byte(`{"model":"cursor/auto","messages":[{"role":"user","content":"first"},{"role":"assistant"` + test.content + `},{"role":"user","content":"second"}]}`)
+
+			// When
+			request, err := ParseChatRequest(raw)
+
+			// Then
+			require.NoError(t, err)
+			require.Equal(t, "User: first\nUser: second", request.Prompt)
+			require.Len(t, request.Transcript, 2)
+			require.Equal(t, []Role{RoleUser, RoleUser}, transcriptRoles(request.Transcript))
+		})
+	}
+}
+
 func Test_StreamChunk_emits_openai_json_payload_for_host_sse_wrapper(t *testing.T) {
 	// Given
 	turn := NewTurn("cursor/auto")

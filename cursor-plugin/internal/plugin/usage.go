@@ -1,84 +1,105 @@
 package plugin
 
 import (
-	"encoding/json"
 	"sync"
 	"time"
+
+	"cursorplugin/internal/openai"
 )
 
-type usageDetail struct {
-	InputTokens     int64 `json:"InputTokens"`
-	OutputTokens    int64 `json:"OutputTokens"`
-	ReasoningTokens int64 `json:"ReasoningTokens"`
-	TotalTokens     int64 `json:"TotalTokens"`
-}
-
-type usageRecord struct {
-	Provider  string      `json:"Provider"`
-	AuthIndex string      `json:"AuthIndex"`
-	Failed    bool        `json:"Failed"`
-	Detail    usageDetail `json:"Detail"`
-}
-
 type localUsageStatus struct {
-	Scope        string    `json:"scope"`
-	StartedAt    time.Time `json:"started_at"`
-	Estimated    bool      `json:"estimated"`
-	Requests     int64     `json:"requests"`
-	Failed       int64     `json:"failed"`
-	InputTokens  int64     `json:"input_tokens"`
-	OutputTokens int64     `json:"output_tokens"`
-	TotalTokens  int64     `json:"total_tokens"`
+	Scope        string     `json:"scope"`
+	StartedAt    time.Time  `json:"started_at"`
+	Estimated    bool       `json:"estimated"`
+	ExecutorRuns int64      `json:"executor_runs"`
+	Requests     int64      `json:"requests"`
+	Succeeded    int64      `json:"succeeded"`
+	Failed       int64      `json:"failed"`
+	LastOutcome  string     `json:"last_outcome,omitempty"`
+	UpdatedAt    *time.Time `json:"updated_at,omitempty"`
+	InputTokens  int64      `json:"input_tokens"`
+	OutputTokens int64      `json:"output_tokens"`
+	TotalTokens  int64      `json:"total_tokens"`
 }
 
 type usageStore struct {
 	mu          sync.RWMutex
 	startedAt   time.Time
 	byAuth      map[string]localUsageStatus
+	requestAuth map[string]string
 	checkpoints *checkpointMetrics
 }
 
 func newUsageStore() *usageStore {
-	return &usageStore{startedAt: time.Now().UTC(), byAuth: make(map[string]localUsageStatus), checkpoints: newCheckpointMetrics()}
+	return &usageStore{
+		startedAt: time.Now().UTC(), byAuth: make(map[string]localUsageStatus),
+		requestAuth: make(map[string]string), checkpoints: newCheckpointMetrics(),
+	}
 }
 
-func (handler *Handler) handleUsage(raw []byte) (any, error) {
-	var record usageRecord
-	if err := json.Unmarshal(raw, &record); err != nil {
-		return nil, err
+func (store *usageStore) recordTokens(authID string, usageEstimate openai.Usage) {
+	if authID == "" {
+		return
 	}
-	if record.Provider != "cursor" || record.AuthIndex == "" {
-		return struct{}{}, nil
-	}
-	handler.usage.add(record)
-	return struct{}{}, nil
-}
-
-func (store *usageStore) add(record usageRecord) {
+	now := time.Now().UTC()
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	usage := store.byAuth[record.AuthIndex]
+	usage := store.byAuth[authID]
+	usage.Scope = "plugin_process"
+	usage.StartedAt = store.startedAt
+	usage.Estimated = true
+	usage.ExecutorRuns++
+	usage.UpdatedAt = &now
+	usage.InputTokens += int64(usageEstimate.PromptTokens)
+	usage.OutputTokens += int64(usageEstimate.CompletionTokens)
+	usage.TotalTokens += int64(usageEstimate.TotalTokens)
+	store.byAuth[authID] = usage
+}
+
+func (store *usageStore) selectRequestAuth(requestID, authID string) {
+	if requestID == "" {
+		return
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if authID == "" {
+		delete(store.requestAuth, requestID)
+		return
+	}
+	store.requestAuth[requestID] = authID
+}
+
+func (store *usageStore) completeRequest(requestID, outcome string) {
+	if requestID == "" {
+		return
+	}
+	now := time.Now().UTC()
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	authID, tracked := store.requestAuth[requestID]
+	delete(store.requestAuth, requestID)
+	if !tracked {
+		return
+	}
+	usage := store.byAuth[authID]
 	usage.Scope = "plugin_process"
 	usage.StartedAt = store.startedAt
 	usage.Estimated = true
 	usage.Requests++
-	if record.Failed {
+	usage.LastOutcome = outcome
+	usage.UpdatedAt = &now
+	if outcome == "succeeded" {
+		usage.Succeeded++
+	} else {
 		usage.Failed++
 	}
-	usage.InputTokens += record.Detail.InputTokens
-	usage.OutputTokens += record.Detail.OutputTokens
-	total := record.Detail.TotalTokens
-	if total == 0 {
-		total = record.Detail.InputTokens + record.Detail.OutputTokens + record.Detail.ReasoningTokens
-	}
-	usage.TotalTokens += total
-	store.byAuth[record.AuthIndex] = usage
+	store.byAuth[authID] = usage
 }
 
-func (store *usageStore) snapshot(authIndex string) localUsageStatus {
+func (store *usageStore) snapshot(authID string) localUsageStatus {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
-	usage := store.byAuth[authIndex]
+	usage := store.byAuth[authID]
 	usage.Scope = "plugin_process"
 	usage.StartedAt = store.startedAt
 	usage.Estimated = true

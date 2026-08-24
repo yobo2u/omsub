@@ -72,8 +72,12 @@ func (handler *Handler) dispatch(ctx context.Context, method string, request []b
 		return managementRegistration(), nil
 	case "management.handle":
 		return handler.handleManagement(ctx, request)
-	case "usage.handle":
-		return handler.handleUsage(request)
+	case "request.intercept_before":
+		return handler.passRequest(request)
+	case "request.intercept_after":
+		return handler.observeRequestAuth(request)
+	case "request.complete":
+		return handler.completeRequest(request)
 	case "auth.identifier", "executor.identifier":
 		return map[string]string{"identifier": "cursor"}, nil
 	case "auth.parse":
@@ -106,21 +110,23 @@ func registration() map[string]any {
 		"schema_version": 3,
 		"metadata": map[string]any{
 			"Name":             "cursor",
-			"Version":          "0.5.8",
+			"Version":          "0.5.9",
 			"Author":           "yobo",
 			"GitHubRepository": "https://github.com/yobo2u/omsub",
 			"Logo":             "",
 			"ConfigFields":     []string{},
 		},
 		"capabilities": map[string]any{
-			"auth_provider":           true,
-			"model_provider":          true,
-			"management_api":          true,
-			"usage_plugin":            true,
-			"executor":                true,
-			"executor_model_scope":    "oauth",
-			"executor_input_formats":  []string{"chat-completions"},
-			"executor_output_formats": []string{"chat-completions"},
+			"auth_provider":            true,
+			"model_provider":           true,
+			"management_api":           true,
+			"request_interceptor":      true,
+			"request_lifecycle_plugin": true,
+			"usage_plugin":             false,
+			"executor":                 true,
+			"executor_model_scope":     "oauth",
+			"executor_input_formats":   []string{"chat-completions"},
+			"executor_output_formats":  []string{"chat-completions"},
 		},
 	}
 }

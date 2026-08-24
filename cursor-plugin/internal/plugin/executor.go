@@ -19,10 +19,13 @@ func (handler *Handler) execute(ctx context.Context, raw []byte) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	turn := openai.NewTurn("cursor/" + chat.Model)
+	defer func() {
+		handler.usage.recordTokens(request.AuthID, turn.EstimatedUsage(usageText(chat)))
+	}()
 	if handler.cursor == nil {
 		return nil, errors.New("Cursor client is unavailable")
 	}
-	turn := openai.NewTurn("cursor/" + chat.Model)
 	_, err = handler.runCheckpointed(ctx, request, chat, credentials, func(event cursorproto.ServerEvent) error {
 		switch event.Kind {
 		case cursorproto.EventText:
@@ -48,6 +51,8 @@ func (handler *Handler) executeStream(ctx context.Context, raw []byte) (any, err
 		return nil, err
 	}
 	if handler.cursor == nil || handler.emitter == nil || request.StreamID == "" {
+		turn := openai.NewTurn("cursor/" + chat.Model)
+		handler.usage.recordTokens(request.AuthID, turn.EstimatedUsage(usageText(chat)))
 		return nil, errors.New("Cursor stream bridge is unavailable")
 	}
 	go handler.runStream(ctx, request, chat, credentials)
@@ -62,7 +67,11 @@ func (handler *Handler) runStream(parent context.Context, request executorReques
 	turn := openai.NewTurn("cursor/" + chat.Model)
 	done := false
 	toolCallSeen := false
-	_, runErr := handler.runCheckpointed(ctx, request, chat, credentials, func(event cursorproto.ServerEvent) error {
+	var runErr error
+	defer func() {
+		handler.usage.recordTokens(request.AuthID, turn.EstimatedUsage(usageText(chat)))
+	}()
+	_, runErr = handler.runCheckpointed(ctx, request, chat, credentials, func(event cursorproto.ServerEvent) error {
 		switch event.Kind {
 		case cursorproto.EventText:
 			chunk, err := turn.StreamChunk(event.Text)

@@ -181,19 +181,102 @@ func Test_Handler_ManagementStatus_includes_plugin_local_estimated_usage(t *test
 	})
 	require.NoError(t, err)
 	handler := NewHandler(Dependencies{
-		Cursor: fakeModelCursorClient{models: []string{"auto"}},
+		Cursor: &recordingCursorClient{steps: []cursorRunStep{successfulTextStep("answer", "conversation-a", []byte("checkpoint-a"))}},
 		Host:   &fakeHostCaller{credentialJSON: credentials},
 	})
-	_, err = handler.handleUsage([]byte(`{"Provider":"cursor","AuthIndex":"cursor-auth","Detail":{"InputTokens":12,"OutputTokens":8,"TotalTokens":20}}`))
+	request := executorFixture(t, "session-a", "account-a", "cursor-auth", "auto", "", []map[string]any{textMessage("user", "question")})
+	observeRequestAuth(t, handler, "request-a", "cursor-auth")
+	_, err = handler.execute(context.Background(), request)
 	require.NoError(t, err)
+	completeCursorRequest(t, handler, "request-a", "succeeded")
 
 	response, err := handler.managementStatus(context.Background())
 
 	require.NoError(t, err)
 	require.Contains(t, string(response.Body), `"local_usage":{"scope":"plugin_process"`)
 	require.Contains(t, string(response.Body), `"estimated":true`)
-	require.Contains(t, string(response.Body), `"total_tokens":20`)
+	require.Contains(t, string(response.Body), `"executor_runs":1`)
+	require.Contains(t, string(response.Body), `"requests":1`)
+	require.Contains(t, string(response.Body), `"succeeded":1`)
 	require.NotContains(t, string(response.Body), `"cached_tokens"`)
+}
+
+func Test_Handler_ManagementStatus_separates_plugin_outcomes_from_host_attempts_and_joins_metrics_by_auth_id(t *testing.T) {
+	credentials, err := cursorauth.MarshalCredentials(cursorauth.Credentials{
+		AccessToken: "secret-access", RefreshToken: "secret-refresh", AccountID: "account-a", Type: "cursor",
+	})
+	require.NoError(t, err)
+	host := &fakeHostCaller{
+		credentialJSON: credentials,
+		listJSON: json.RawMessage(`{"files":[{
+			"id":"cursor-runtime-id",
+			"auth_index":"cursor-auth-index",
+			"name":"cursor-runtime-id.json",
+			"source":"file",
+			"type":"cursor",
+			"provider":"cursor",
+			"status":"error",
+			"status_message":"Cursor upstream timed out",
+			"success":12,
+			"failed":13
+		}]}`),
+	}
+	client := &recordingCursorClient{steps: []cursorRunStep{
+		{err: fmt.Errorf("transient Cursor timeout")},
+		successfulTextStep("answer", "conversation-a", []byte("checkpoint-a")),
+	}}
+	handler := NewHandler(Dependencies{Cursor: client, Host: host})
+	request := executorFixture(t, "session-a", "account-a", "cursor-runtime-id", "auto", "", []map[string]any{textMessage("user", "question")})
+
+	observeRequestAuth(t, handler, "request-a", "cursor-runtime-id")
+	_, err = handler.execute(context.Background(), request)
+	require.Error(t, err)
+	_, err = handler.execute(context.Background(), request)
+	require.NoError(t, err)
+	completeCursorRequest(t, handler, "request-a", "succeeded")
+	completeCursorRequest(t, handler, "request-a", "failed")
+	response, err := handler.managementStatus(context.Background())
+	require.NoError(t, err)
+
+	var status struct {
+		Accounts []struct {
+			Status     string `json:"status"`
+			LocalUsage struct {
+				ExecutorRuns int64      `json:"executor_runs"`
+				Requests     int64      `json:"requests"`
+				Succeeded    int64      `json:"succeeded"`
+				Failed       int64      `json:"failed"`
+				TotalTokens  int64      `json:"total_tokens"`
+				LastOutcome  string     `json:"last_outcome"`
+				UpdatedAt    *time.Time `json:"updated_at"`
+			} `json:"local_usage"`
+			HostRuntime struct {
+				Scope           string `json:"scope"`
+				Status          string `json:"status"`
+				StatusMessage   string `json:"status_message"`
+				SuccessAttempts int64  `json:"success_attempts"`
+				FailedAttempts  int64  `json:"failed_attempts"`
+			} `json:"host_runtime"`
+			CheckpointMetrics checkpointMetricStatus `json:"checkpoint_metrics"`
+		} `json:"accounts"`
+	}
+	require.NoError(t, json.Unmarshal(response.Body, &status))
+	require.Len(t, status.Accounts, 1)
+	account := status.Accounts[0]
+	require.Equal(t, "active", account.Status)
+	require.EqualValues(t, 2, account.LocalUsage.ExecutorRuns)
+	require.EqualValues(t, 1, account.LocalUsage.Requests)
+	require.EqualValues(t, 1, account.LocalUsage.Succeeded)
+	require.Zero(t, account.LocalUsage.Failed)
+	require.Positive(t, account.LocalUsage.TotalTokens)
+	require.Equal(t, "succeeded", account.LocalUsage.LastOutcome)
+	require.NotNil(t, account.LocalUsage.UpdatedAt)
+	require.Equal(t, "cli_proxy_process", account.HostRuntime.Scope)
+	require.Equal(t, "error", account.HostRuntime.Status)
+	require.Equal(t, "Cursor upstream timed out", account.HostRuntime.StatusMessage)
+	require.EqualValues(t, 12, account.HostRuntime.SuccessAttempts)
+	require.EqualValues(t, 13, account.HostRuntime.FailedAttempts)
+	require.Positive(t, account.CheckpointMetrics.FullReplayBytes)
 }
 
 func Test_Handler_ManagementStatus_aggregates_checkpoint_metrics_without_sensitive_state(t *testing.T) {
@@ -215,10 +298,14 @@ func Test_Handler_ManagementStatus_aggregates_checkpoint_metrics_without_sensiti
 
 	_, err = handler.execute(context.Background(), seed)
 	require.NoError(t, err)
+	observeRequestAuth(t, handler, "request-seed", "cursor-auth")
+	completeCursorRequest(t, handler, "request-seed", "succeeded")
 
 	// When
 	_, err = handler.execute(context.Background(), continuation)
 	require.NoError(t, err)
+	observeRequestAuth(t, handler, "request-continuation", "cursor-auth")
+	completeCursorRequest(t, handler, "request-continuation", "succeeded")
 	response, err := handler.managementStatus(context.Background())
 
 	// Then
@@ -235,6 +322,19 @@ func Test_Handler_ManagementStatus_aggregates_checkpoint_metrics_without_sensiti
 	require.Positive(t, metrics.SuffixBytes)
 	require.EqualValues(t, 3, metrics.TTFTSamples)
 	require.EqualValues(t, 60, metrics.TTFTTotalMilliseconds)
+	var logical struct {
+		Accounts []struct {
+			LocalUsage struct {
+				Requests  int64 `json:"requests"`
+				Succeeded int64 `json:"succeeded"`
+				Failed    int64 `json:"failed"`
+			} `json:"local_usage"`
+		} `json:"accounts"`
+	}
+	require.NoError(t, json.Unmarshal(response.Body, &logical))
+	require.EqualValues(t, 2, logical.Accounts[0].LocalUsage.Requests)
+	require.EqualValues(t, 2, logical.Accounts[0].LocalUsage.Succeeded)
+	require.Zero(t, logical.Accounts[0].LocalUsage.Failed)
 	require.NotContains(t, string(response.Body), "session-secret")
 	require.NotContains(t, string(response.Body), "conversation-secret")
 	require.NotContains(t, string(response.Body), "checkpoint-secret")
@@ -268,6 +368,13 @@ func Test_Handler_ManagementResource_serves_bilingual_shell_without_exposing_aut
 	require.Contains(t, string(response.Body), `save.dataset.action = "save-settings"`)
 	require.Contains(t, string(response.Body), `checkpointMetrics: "检查点指标"`)
 	require.Contains(t, string(response.Body), `checkpointMetrics: "Checkpoint metrics"`)
+	require.Contains(t, string(response.Body), `logicalRequestsHelp: "一次用户调用只计一个最终结果；检查点回退和宿主重试不会重复计入请求。Token 按插件实际执行次数估算。"`)
+	require.Contains(t, string(response.Body), `logicalRequestsHelp: "Each user call records one terminal outcome; checkpoint fallbacks and host retries are not double-counted as requests. Tokens are estimated per plugin executor run."`)
+	require.Contains(t, string(response.Body), `hostSchedulerMetrics: "宿主调度指标"`)
+	require.Contains(t, string(response.Body), `hostSchedulerMetrics: "Host scheduler metrics"`)
+	require.Contains(t, string(response.Body), `account.local_usage?.succeeded || 0`)
+	require.Contains(t, string(response.Body), `account.local_usage?.executor_runs || 0`)
+	require.Contains(t, string(response.Body), `account.host_runtime?.success_attempts || 0`)
 	require.Contains(t, string(response.Body), `unknown: "未知"`)
 	require.Contains(t, string(response.Body), `unknown: "Unknown"`)
 	require.Contains(t, string(response.Body), `metric(translate("cachedTokens"), translate("unknown"))`)

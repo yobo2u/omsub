@@ -107,9 +107,12 @@ func ParseChatRequest(raw []byte) (ChatRequest, error) {
 		if !ok {
 			return ChatRequest{}, invalidRequest(fmt.Sprintf("unsupported OpenAI message role %q", message.Role))
 		}
-		content, err := decodeMessageContent(message.Content, message.Role == "assistant" && len(message.ToolCalls) > 0)
+		content, err := decodeMessageContent(message.Content, role == RoleAssistant)
 		if err != nil {
 			return ChatRequest{}, err
+		}
+		if role == RoleAssistant && len(message.ToolCalls) == 0 && strings.TrimSpace(content.Text) == "" && len(content.Images) == 0 && len(content.Attachments) == 0 {
+			continue
 		}
 		images = append(images, content.Images...)
 		attachments = append(attachments, content.Attachments...)

@@ -102,9 +102,11 @@
     .account { box-shadow: var(--shadow); }
     .account-head { display: flex; justify-content: space-between; gap: var(--space-3); align-items: start; }
     .pill { display: inline-flex; align-self: start; width: max-content; padding: var(--space-1) var(--space-2); color: var(--success); background: var(--surface-muted); border-radius: var(--radius-pill); font-size: var(--font-xs); font-weight: var(--weight-action); }
+    .pill[data-status="error"], .pill[data-status="unavailable"] { color: var(--danger); }
+    .pill[data-status="disabled"], .pill[data-status="inactive"] { color: var(--muted); }
     .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-2); margin-top: var(--space-4); }
 
-    .checkpoint-metrics { margin-top: var(--space-6); }
+    .metric-section { margin-top: var(--space-6); }
     .metric { padding: var(--space-3); border-radius: var(--radius-sm); background: var(--surface-muted); }
     .metric span { display: block; color: var(--muted); font-size: var(--font-xs); }
     .metric strong { display: block; margin-top: var(--space-1); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--font-lg); }
@@ -195,10 +197,17 @@
           quotaBalance: "订阅余额",
           unavailable: "不可用",
           unknown: "未知",
-          localEstimatedTokens: "本地估算 Token",
+          localEstimatedTokens: "本地估算上游 Token",
+          pluginExecutorRuns: "插件执行次数",
           cachedTokens: "缓存 Token",
-          successfulRequests: "成功请求",
-          failedRequests: "失败请求",
+          successfulRequests: "成功请求（最终）",
+          failedRequests: "失败请求（最终）",
+          logicalRequestsHelp: "一次用户调用只计一个最终结果；检查点回退和宿主重试不会重复计入请求。Token 按插件实际执行次数估算。",
+          hostSchedulerMetrics: "宿主调度指标",
+          hostSchedulerMetricsHelp: "由 CLIProxyAPI 汇总认证调度尝试；重试和回退会分别计数，因此不能与用户请求一一对应。",
+          hostSchedulerStatus: "宿主状态",
+          hostSuccessfulAttempts: "成功尝试",
+          hostFailedAttempts: "失败尝试",
           checkpointMetrics: "检查点指标",
           checkpointMetricsHelp: "仅汇总本插件进程内的命中、失效、回退、字节数和首 Token 延迟；不保存或显示会话标识、检查点或 Token 内容。",
           checkpointHits: "检查点命中",
@@ -226,6 +235,7 @@
           status_disabled: "已禁用",
           status_unavailable: "不可用",
           status_error: "错误",
+          status_cooldown: "冷却中",
           status_unknown: "未知"
         },
         en: {
@@ -258,10 +268,17 @@
           quotaBalance: "Subscription balance",
           unavailable: "Unavailable",
           unknown: "Unknown",
-          localEstimatedTokens: "Local estimated tokens",
+          localEstimatedTokens: "Local estimated upstream tokens",
+          pluginExecutorRuns: "Plugin executor runs",
           cachedTokens: "Cached tokens",
-          successfulRequests: "Successful requests",
-          failedRequests: "Failed requests",
+          successfulRequests: "Successful requests (terminal)",
+          failedRequests: "Failed requests (terminal)",
+          logicalRequestsHelp: "Each user call records one terminal outcome; checkpoint fallbacks and host retries are not double-counted as requests. Tokens are estimated per plugin executor run.",
+          hostSchedulerMetrics: "Host scheduler metrics",
+          hostSchedulerMetricsHelp: "CLIProxyAPI scheduler attempts are shown separately. Retries and fallbacks each count as attempts, so they do not map one-to-one to user requests.",
+          hostSchedulerStatus: "Host status",
+          hostSuccessfulAttempts: "Successful attempts",
+          hostFailedAttempts: "Failed attempts",
           checkpointMetrics: "Checkpoint metrics",
           checkpointMetricsHelp: "Aggregated in this plugin process only: hits, invalidations, fallbacks, bytes, and time to first token. It never stores or shows session IDs, checkpoints, or token content.",
           checkpointHits: "Checkpoint hits",
@@ -289,6 +306,7 @@
           status_disabled: "Disabled",
           status_unavailable: "Unavailable",
           status_error: "Error",
+          status_cooldown: "Cooling down",
           status_unknown: "Unknown"
         }
       };
@@ -417,6 +435,16 @@
         return code;
       }
 
+      function normalizedStatus(status) {
+        const rawStatus = String(status || "unknown").toLowerCase();
+        return rawStatus.startsWith("unavailable") ? "unavailable" : rawStatus;
+      }
+
+      function statusLabel(status) {
+        const normalized = normalizedStatus(status);
+        return translations[currentLanguage][`status_${normalized}`] || status || translate("status_unknown");
+      }
+
       function renderAccount(account) {
         const card = document.createElement("section");
         card.className = "panel account";
@@ -431,9 +459,8 @@
         titleWrap.append(title, subtitle);
         const pill = document.createElement("span");
         pill.className = "pill";
-        const rawStatus = String(account.status || "unknown").toLowerCase();
-        const statusKey = rawStatus.startsWith("unavailable") ? "status_unavailable" : `status_${rawStatus}`;
-        pill.textContent = translations[currentLanguage][statusKey] || account.status || translate("status_unknown");
+        pill.dataset.status = normalizedStatus(account.status);
+        pill.textContent = statusLabel(account.status);
         head.append(titleWrap, pill);
 
         const metrics = document.createElement("div");
@@ -441,14 +468,35 @@
         metrics.append(
           metric(translate("quotaBalance"), translate("unavailable")),
           metric(translate("localEstimatedTokens"), account.local_usage?.total_tokens || 0),
+          metric(translate("pluginExecutorRuns"), account.local_usage?.executor_runs || 0),
           metric(translate("cachedTokens"), translate("unknown")),
-          metric(translate("successfulRequests"), account.success || 0),
-          metric(translate("failedRequests"), account.failed || 0)
+          metric(translate("successfulRequests"), account.local_usage?.succeeded || 0),
+          metric(translate("failedRequests"), account.local_usage?.failed || 0)
         );
+        const logicalHelp = document.createElement("p");
+        logicalHelp.className = "muted";
+        logicalHelp.textContent = translate("logicalRequestsHelp");
+
+        const runtime = account.host_runtime || {};
+        const hostMetrics = document.createElement("section");
+        hostMetrics.className = "metric-section";
+        const hostTitle = document.createElement("h3");
+        hostTitle.textContent = translate("hostSchedulerMetrics");
+        const hostHelp = document.createElement("p");
+        hostHelp.className = "muted";
+        hostHelp.textContent = translate("hostSchedulerMetricsHelp");
+        const hostGrid = document.createElement("div");
+        hostGrid.className = "metrics";
+        hostGrid.append(
+          metric(translate("hostSchedulerStatus"), statusLabel(runtime.status)),
+          metric(translate("hostSuccessfulAttempts"), account.host_runtime?.success_attempts || 0),
+          metric(translate("hostFailedAttempts"), account.host_runtime?.failed_attempts || 0)
+        );
+        hostMetrics.append(hostTitle, hostHelp, hostGrid);
 
         const checkpoint = account.checkpoint_metrics || {};
         const checkpointMetrics = document.createElement("section");
-        checkpointMetrics.className = "checkpoint-metrics";
+        checkpointMetrics.className = "metric-section";
         const checkpointTitle = document.createElement("h3");
         checkpointTitle.textContent = translate("checkpointMetrics");
         const checkpointHelp = document.createElement("p");
@@ -528,7 +576,7 @@
         actions.append(save, disableAll);
         fieldset.append(legend, modelGrid);
         form.append(fieldset, actions);
-        card.append(head, metrics, checkpointMetrics, form);
+        card.append(head, metrics, logicalHelp, hostMetrics, checkpointMetrics, form);
         return card;
       }
 
