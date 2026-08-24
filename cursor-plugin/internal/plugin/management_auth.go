@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"slices"
 	"strings"
 	"time"
 
@@ -88,19 +87,25 @@ func (handler *Handler) managementStatus(ctx context.Context) (managementRespons
 		return managementError(http.StatusBadGateway, err.Error()), nil
 	}
 	status := cursorManagementStatus{Provider: "cursor", GeneratedAt: time.Now().UTC(), Accounts: make([]cursorAccountStatus, 0, len(files)), CheckpointMetrics: handler.usage.checkpoints.total()}
-	seenIdentities := make(map[string]struct{}, len(files))
+	accountByIdentity := make(map[string]int, len(files))
 	for _, file := range files {
 		credential, credentialErr := handler.getCursorCredential(ctx, file.AuthIndex)
+		identities := []string(nil)
 		if credentialErr == nil {
-			identities := cursorCredentialIdentities(credential)
-			if slices.ContainsFunc(identities, func(identity string) bool {
-				_, duplicate := seenIdentities[identity]
-				return duplicate
-			}) {
-				continue
-			}
+			identities = cursorCredentialIdentities(credential)
+			duplicateIndex := -1
 			for _, identity := range identities {
-				seenIdentities[identity] = struct{}{}
+				if index, duplicate := accountByIdentity[identity]; duplicate {
+					duplicateIndex = index
+					break
+				}
+			}
+			if duplicateIndex >= 0 {
+				mergeCursorAccountMetrics(&status.Accounts[duplicateIndex], file, handler.usage)
+				for _, identity := range identities {
+					accountByIdentity[identity] = duplicateIndex
+				}
+				continue
 			}
 		}
 		account, accountErr := handler.cursorAccountStatusWithCredential(ctx, file, credential, credentialErr)
@@ -118,9 +123,24 @@ func (handler *Handler) managementStatus(ctx context.Context) (managementRespons
 				Models:            []cursorModelStatus{},
 			}
 		}
+		accountIndex := len(status.Accounts)
 		status.Accounts = append(status.Accounts, account)
+		for _, identity := range identities {
+			accountByIdentity[identity] = accountIndex
+		}
 	}
 	return managementJSON(http.StatusOK, status)
+}
+
+func mergeCursorAccountMetrics(account *cursorAccountStatus, file hostAuthFile, usage *usageStore) {
+	metricKey := cursorMetricKey(file)
+	account.LocalUsage = mergeLocalUsage(account.LocalUsage, usage.snapshot(metricKey))
+	account.CheckpointMetrics = mergeCheckpointMetricStatus(account.CheckpointMetrics, usage.checkpoints.snapshot(metricKey))
+	account.HostRuntime.SuccessAttempts += file.Success
+	account.HostRuntime.FailedAttempts += file.Failed
+	if !strings.HasPrefix(account.Status, "unavailable:") {
+		account.Status = cursorPluginStatus(account.HostRuntime.Status, account.LocalUsage.LastOutcome)
+	}
 }
 
 func (handler *Handler) cursorAccountStatusWithCredential(ctx context.Context, file hostAuthFile, credential cursorauth.Credentials, credentialErr error) (cursorAccountStatus, error) {

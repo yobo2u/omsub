@@ -10,6 +10,7 @@ import (
 	"cursorplugin/internal/cursorapi"
 	"cursorplugin/internal/cursorauth"
 	"cursorplugin/internal/cursorproto"
+	"cursorplugin/internal/openai"
 
 	"github.com/stretchr/testify/require"
 )
@@ -102,12 +103,20 @@ func Test_Handler_ManagementStatus_deduplicates_same_email_with_different_accoun
 	require.NoError(t, err)
 	host := &fakeHostCaller{
 		listJSON: json.RawMessage(`{"files":[
-			{"auth_index":"cursor-auth-1","name":"cursor-auth-1.json","type":"cursor","provider":"cursor","status":"active"},
-			{"auth_index":"cursor-auth-2","name":"cursor-auth-2.json","type":"cursor","provider":"cursor","status":"active"}
+			{"auth_index":"cursor-auth-1","name":"cursor-auth-1.json","type":"cursor","provider":"cursor","status":"active","success":2,"failed":3},
+			{"auth_index":"cursor-auth-2","name":"cursor-auth-2.json","type":"cursor","provider":"cursor","status":"active","success":5,"failed":7}
 		]}`),
 		credentialJSONByIndex: map[string]json.RawMessage{"cursor-auth-1": first, "cursor-auth-2": second},
 	}
 	handler := NewHandler(Dependencies{Cursor: fakeModelCursorClient{models: []string{"auto"}}, Host: host})
+	handler.usage.recordTokens("cursor-auth-1", openai.Usage{PromptTokens: 3, CompletionTokens: 5, TotalTokens: 8})
+	handler.usage.recordTokens("cursor-auth-2", openai.Usage{PromptTokens: 7, CompletionTokens: 11, TotalTokens: 18})
+	observeRequestAuth(t, handler, "request-1", "cursor-auth-1")
+	completeCursorRequest(t, handler, "request-1", "succeeded")
+	observeRequestAuth(t, handler, "request-2", "cursor-auth-2")
+	completeCursorRequest(t, handler, "request-2", "failed")
+	handler.usage.checkpoints.recordLookup("cursor-auth-1", true)
+	handler.usage.checkpoints.recordLookup("cursor-auth-2", false)
 
 	response, err := handler.managementStatus(context.Background())
 
@@ -115,6 +124,20 @@ func Test_Handler_ManagementStatus_deduplicates_same_email_with_different_accoun
 	var status cursorManagementStatus
 	require.NoError(t, json.Unmarshal(response.Body, &status))
 	require.Len(t, status.Accounts, 1)
+	account := status.Accounts[0]
+	require.EqualValues(t, 2, account.LocalUsage.ExecutorRuns)
+	require.EqualValues(t, 2, account.LocalUsage.Requests)
+	require.EqualValues(t, 1, account.LocalUsage.Succeeded)
+	require.EqualValues(t, 1, account.LocalUsage.Failed)
+	require.EqualValues(t, 10, account.LocalUsage.InputTokens)
+	require.EqualValues(t, 16, account.LocalUsage.OutputTokens)
+	require.EqualValues(t, 26, account.LocalUsage.TotalTokens)
+	require.Equal(t, "failed", account.LocalUsage.LastOutcome)
+	require.EqualValues(t, 7, account.HostRuntime.SuccessAttempts)
+	require.EqualValues(t, 10, account.HostRuntime.FailedAttempts)
+	require.EqualValues(t, 1, account.CheckpointMetrics.Hits)
+	require.EqualValues(t, 1, account.CheckpointMetrics.Misses)
+	require.Equal(t, "error", account.Status)
 }
 
 func Test_Handler_ManagementStatus_ignores_stale_memory_only_cursor_record(t *testing.T) {

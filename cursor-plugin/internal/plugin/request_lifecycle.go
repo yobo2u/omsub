@@ -20,8 +20,9 @@ type requestInterceptResponse struct {
 }
 
 type requestCompletion struct {
-	RequestID string `json:"RequestID"`
-	Outcome   string `json:"Outcome"`
+	RequestID string                     `json:"RequestID"`
+	Outcome   string                     `json:"Outcome"`
+	Metadata  map[string]json.RawMessage `json:"Metadata"`
 }
 
 func (handler *Handler) passRequest(raw []byte) (any, error) {
@@ -37,10 +38,7 @@ func (handler *Handler) observeRequestAuth(raw []byte) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	authID := metadataString(request.Metadata, "selected_auth_id")
-	if !strings.HasPrefix(strings.ToLower(authID), "cursor-") {
-		authID = ""
-	}
+	authID, _ := selectedCursorAuth(request.Metadata)
 	handler.usage.selectRequestAuth(request.RequestID, authID)
 	return requestInterceptResponse{Headers: request.Headers, Body: request.Body}, nil
 }
@@ -53,7 +51,8 @@ func (handler *Handler) completeRequest(raw []byte) (any, error) {
 	if strings.TrimSpace(completion.RequestID) == "" {
 		return nil, fmt.Errorf("request completion ID is required")
 	}
-	handler.usage.completeRequest(completion.RequestID, strings.ToLower(strings.TrimSpace(completion.Outcome)))
+	authID, selected := selectedCursorAuth(completion.Metadata)
+	handler.usage.completeRequest(completion.RequestID, authID, selected, strings.ToLower(strings.TrimSpace(completion.Outcome)))
 	return struct{}{}, nil
 }
 
@@ -68,11 +67,18 @@ func decodeRequestIntercept(raw []byte) (requestInterceptRequest, error) {
 	return request, nil
 }
 
-func metadataString(metadata map[string]json.RawMessage, key string) string {
-	raw := metadata[key]
+func selectedCursorAuth(metadata map[string]json.RawMessage) (string, bool) {
+	raw, present := metadata["selected_auth_id"]
+	if !present {
+		return "", false
+	}
 	var value string
 	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
-		return ""
+		return "", true
 	}
-	return strings.TrimSpace(value)
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(strings.ToLower(value), "cursor-") {
+		return "", true
+	}
+	return value, true
 }

@@ -178,3 +178,15 @@ func completeCursorRequest(t *testing.T, handler *Handler, requestID, outcome st
 	_, err = handler.dispatch(context.Background(), "request.complete", raw)
 	require.NoError(t, err)
 }
+
+func completeCursorRequestForAuth(t *testing.T, handler *Handler, requestID, authID, outcome string) {
+	t.Helper()
+	raw, err := json.Marshal(map[string]any{
+		"RequestID": requestID,
+		"Outcome":   outcome,
+		"Metadata":  map[string]any{"selected_auth_id": authID},
+	})
+	require.NoError(t, err)
+	_, err = handler.dispatch(context.Background(), "request.complete", raw)
+	require.NoError(t, err)
+}

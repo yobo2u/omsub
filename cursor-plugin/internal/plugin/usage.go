@@ -69,16 +69,19 @@ func (store *usageStore) selectRequestAuth(requestID, authID string) {
 	store.requestAuth[requestID] = authID
 }
 
-func (store *usageStore) completeRequest(requestID, outcome string) {
+func (store *usageStore) completeRequest(requestID, authID string, selected bool, outcome string) {
 	if requestID == "" {
 		return
 	}
 	now := time.Now().UTC()
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	authID, tracked := store.requestAuth[requestID]
+	trackedAuthID := store.requestAuth[requestID]
 	delete(store.requestAuth, requestID)
-	if !tracked {
+	if !selected {
+		authID = trackedAuthID
+	}
+	if authID == "" {
 		return
 	}
 	usage := store.byAuth[authID]
@@ -104,4 +107,26 @@ func (store *usageStore) snapshot(authID string) localUsageStatus {
 	usage.StartedAt = store.startedAt
 	usage.Estimated = true
 	return usage
+}
+
+func mergeLocalUsage(left, right localUsageStatus) localUsageStatus {
+	merged := left
+	merged.Scope = "plugin_process"
+	if merged.StartedAt.IsZero() || (!right.StartedAt.IsZero() && right.StartedAt.Before(merged.StartedAt)) {
+		merged.StartedAt = right.StartedAt
+	}
+	merged.Estimated = left.Estimated || right.Estimated
+	merged.ExecutorRuns += right.ExecutorRuns
+	merged.Requests += right.Requests
+	merged.Succeeded += right.Succeeded
+	merged.Failed += right.Failed
+	merged.InputTokens += right.InputTokens
+	merged.OutputTokens += right.OutputTokens
+	merged.TotalTokens += right.TotalTokens
+	if right.UpdatedAt != nil && (merged.UpdatedAt == nil || !right.UpdatedAt.Before(*merged.UpdatedAt)) {
+		updatedAt := *right.UpdatedAt
+		merged.UpdatedAt = &updatedAt
+		merged.LastOutcome = right.LastOutcome
+	}
+	return merged
 }

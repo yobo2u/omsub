@@ -105,6 +105,19 @@ func finalizedCheckpointMetrics(status checkpointMetricStatus) checkpointMetricS
 	return status
 }
 
+func mergeCheckpointMetricStatus(left, right checkpointMetricStatus) checkpointMetricStatus {
+	return finalizedCheckpointMetrics(checkpointMetricStatus{
+		Hits:                  left.Hits + right.Hits,
+		Misses:                left.Misses + right.Misses,
+		Invalidations:         left.Invalidations + right.Invalidations,
+		Fallbacks:             left.Fallbacks + right.Fallbacks,
+		FullReplayBytes:       left.FullReplayBytes + right.FullReplayBytes,
+		SuffixBytes:           left.SuffixBytes + right.SuffixBytes,
+		TTFTSamples:           left.TTFTSamples + right.TTFTSamples,
+		TTFTTotalMilliseconds: left.TTFTTotalMilliseconds + right.TTFTTotalMilliseconds,
+	})
+}
+
 func runInputBytes(input cursorapi.RunInput) int64 {
 	bytes := len(input.System) + len(input.Prompt)
 	for _, tool := range input.Tools {
