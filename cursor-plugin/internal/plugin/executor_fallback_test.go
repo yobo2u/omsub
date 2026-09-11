@@ -117,6 +117,56 @@ func Test_Fallback_InternalStream_retries_fresh_when_checkpoint_suffix(t *testin
 	require.Equal(t, cursorproto.FullReplay, inputs[2].Mode)
 }
 
+func Test_Fallback_FailedPrecondition_retries_fresh_when_checkpoint_suffix_has_no_output(t *testing.T) {
+	// Given
+	client := &recordingCursorClient{steps: []cursorRunStep{
+		successfulTextStep("seed-answer", "conversation", []byte("checkpoint-seed")),
+		{result: cursorapi.RunResult{ConversationID: "conversation"}, err: cursorapi.ErrFailedPrecondition},
+		successfulTextStep("fallback-answer", "fresh-conversation", []byte("checkpoint-fresh")),
+	}}
+	handler := NewHandler(Dependencies{Cursor: client})
+	_, err := handler.execute(context.Background(), executorFixture(t, "session", "account", "auth", "auto", "", []map[string]any{textMessage("user", "seed")}))
+	require.NoError(t, err)
+	continuation := executorFixture(t, "session", "account", "auth", "auto", "", []map[string]any{
+		textMessage("user", "seed"), textMessage("assistant", "seed-answer"), textMessage("user", "next"),
+	})
+
+	// When
+	_, err = handler.execute(context.Background(), continuation)
+
+	// Then
+	require.NoError(t, err)
+	inputs := client.Inputs()
+	require.Len(t, inputs, 3)
+	require.Equal(t, cursorproto.CheckpointSuffix, inputs[1].Mode)
+	require.Equal(t, cursorproto.FullReplay, inputs[2].Mode)
+}
+
+func Test_Fallback_ProgressTimeout_retries_fresh_once_when_checkpoint_suffix_has_no_output(t *testing.T) {
+	// Given
+	client := &recordingCursorClient{steps: []cursorRunStep{
+		successfulTextStep("seed-answer", "conversation", []byte("checkpoint-seed")),
+		{result: cursorapi.RunResult{ConversationID: "conversation"}, err: cursorapi.ErrProgressTimeout},
+		successfulTextStep("fallback-answer", "fresh-conversation", []byte("checkpoint-fresh")),
+	}}
+	handler := NewHandler(Dependencies{Cursor: client})
+	_, err := handler.execute(context.Background(), executorFixture(t, "session", "account", "auth", "auto", "", []map[string]any{textMessage("user", "seed")}))
+	require.NoError(t, err)
+	continuation := executorFixture(t, "session", "account", "auth", "auto", "", []map[string]any{
+		textMessage("user", "seed"), textMessage("assistant", "seed-answer"), textMessage("user", "next"),
+	})
+
+	// When
+	_, err = handler.execute(context.Background(), continuation)
+
+	// Then
+	require.NoError(t, err)
+	inputs := client.Inputs()
+	require.Len(t, inputs, 3)
+	require.Equal(t, cursorproto.CheckpointSuffix, inputs[1].Mode)
+	require.Equal(t, cursorproto.FullReplay, inputs[2].Mode)
+}
+
 func Test_Fallback_InvalidArgument_does_not_retry_the_fresh_replay(t *testing.T) {
 	client := &recordingCursorClient{steps: []cursorRunStep{
 		successfulTextStep("seed-answer", "conversation", []byte("checkpoint-seed")),
@@ -254,4 +304,5 @@ func Test_ToolContinuation_retains_confirmed_checkpoint_and_exposes_call_once(t 
 	require.Equal(t, []byte("checkpoint-seed"), inputs[2].Checkpoint)
 	require.NotEqual(t, []byte("unconfirmed-tool-checkpoint"), inputs[2].Checkpoint)
 	require.Contains(t, inputs[2].Prompt, "Tool result lookup (call-1): result")
+	require.Contains(t, inputs[2].Prompt, "Do not repeat a completed tool call")
 }

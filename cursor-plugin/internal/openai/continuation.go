@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+const toolResultContinuationPrompt = "Continue: the requested tool results above are complete. Do not repeat a completed tool call; continue with the user's request."
+
 type Continuation struct {
 	Prompt        string
 	Images        []Image
@@ -39,8 +41,16 @@ func (request ChatRequest) ContinuationFrom(coveredMessageCount int) (Continuati
 			return Continuation{}, false
 		}
 	}
+	history = appendToolResultContinuation(history, request.Transcript)
 	continuation.Prompt = strings.Join(history, "\n")
 	return continuation, continuation.Prompt != "" || len(continuation.Images) > 0 || len(continuation.Attachments) > 0
+}
+
+func appendToolResultContinuation(history []string, transcript []Message) []string {
+	if len(transcript) == 0 || transcript[len(transcript)-1].Role != RoleTool {
+		return history
+	}
+	return append(history, toolResultContinuationPrompt)
 }
 
 func (request ChatRequest) LineageWithAssistant(text string) Lineage {

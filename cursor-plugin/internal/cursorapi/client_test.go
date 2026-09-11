@@ -8,7 +8,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -215,7 +218,23 @@ func Test_NewClient_default_transport_attempts_HTTP2(t *testing.T) {
 	require.True(t, ok)
 	require.True(t, transport.ForceAttemptHTTP2)
 	require.Nil(t, transport.TLSNextProto)
-	require.Equal(t, "cli-2026.07.08-0c04a8a", client.clientVersion)
+	require.Equal(t, "cli-2026.07.16-899851b", client.clientVersion)
+	require.Equal(t, 90*time.Second, client.progress)
+}
+
+func Test_NewClient_captures_Cursor_workspace_context(t *testing.T) {
+	workingDirectory, err := os.Getwd()
+	require.NoError(t, err)
+	homeDirectory, err := os.UserHomeDir()
+	require.NoError(t, err)
+	projectName := regexp.MustCompile(`[^a-zA-Z0-9]+`).ReplaceAllString(workingDirectory, "-")
+	projectName = strings.Trim(projectName, "-")
+
+	client, err := NewClient(Config{BaseURL: "https://api2.cursor.sh"})
+
+	require.NoError(t, err)
+	require.Equal(t, workingDirectory, client.workspacePath)
+	require.Equal(t, filepath.Join(homeDirectory, ".cursor", "projects", projectName), client.projectFolder)
 }
 
 func Test_randomUUID_returns_standard_version_four_identifier(t *testing.T) {

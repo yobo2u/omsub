@@ -153,6 +153,7 @@ func ParseChatRequest(raw []byte) (ChatRequest, error) {
 	if !seenUser {
 		return ChatRequest{}, invalidRequest("OpenAI chat request requires a user message")
 	}
+	history = appendToolResultContinuation(history, transcript)
 	request := ChatRequest{
 		Model: model, System: strings.Join(system, "\n\n"), Prompt: strings.Join(history, "\n"), Stream: wire.Stream,
 		Tools: tools, Images: images, Attachments: attachments, Transcript: transcript,

@@ -39,7 +39,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          version="0.5.9"
+          version="0.5.10"
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             version="${GITHUB_REF_NAME#v}"
           fi
@@ -67,4 +67,4 @@ jobs:
           "release/cursor-plugin-${{ steps.version.outputs.version }}-linux-amd64.tar.gz"
           --repo "$GITHUB_REPOSITORY"
           --title "Cursor plugin $GITHUB_REF_NAME"
-          --notes "Unofficial community plugin for user-authorized Cursor accounts. Review DISCLAIMER.md before installation. The cursor_${GITHUB_REF_NAME#v}_linux_amd64.zip asset and checksums.txt follow the CLIProxyAPI official plugin-store format; the tar.gz asset remains available for manual installation."
+          --notes-file "docs/releases/$GITHUB_REF_NAME.md"

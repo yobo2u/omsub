@@ -30,6 +30,8 @@ func Test_Handler_ModelsForAuth_hides_models_disabled_by_cursor_plugin(t *testin
 	rawResult, err := json.Marshal(result)
 	require.NoError(t, err)
 	require.Contains(t, string(rawResult), `"ID":"cursor/auto"`)
+	require.Contains(t, string(rawResult), `"SupportedInputModalities":["text","image"]`)
+	require.Contains(t, string(rawResult), `"SupportedOutputModalities":["text","image"]`)
 	require.Contains(t, string(rawResult), `"ID":"cursor/claude-4-sonnet"`)
 	require.NotContains(t, string(rawResult), `"ID":"cursor/gpt-5"`)
 }

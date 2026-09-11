@@ -71,6 +71,23 @@ func Test_Client_Run_uses_clean_connect_end_stream_as_done_after_text(t *testing
 	require.Equal(t, []cursorproto.EventKind{cursorproto.EventText, cursorproto.EventDone}, eventKinds(events))
 }
 
+func Test_Client_Run_uses_clean_connect_end_stream_as_done_after_image(t *testing.T) {
+	endStream := connectFrame([]byte(`{}`))
+	endStream[0] = 0x02
+	body := newChunkBody(connectFrame(generateImageCompletionMessage([]byte("\x89PNG\r\n\x1a\nimage"))), endStream)
+	client := newTestClient(t, staticResponseTransport(body), Config{})
+	var events []cursorproto.ServerEvent
+
+	result, err := client.Run(context.Background(), validRunInput(), func(event cursorproto.ServerEvent) error {
+		events = append(events, event)
+		return nil
+	})
+
+	require.NoError(t, err)
+	require.True(t, result.OutputExposed)
+	require.Equal(t, []cursorproto.EventKind{cursorproto.EventImage, cursorproto.EventDone}, eventKinds(events))
+}
+
 func Test_Client_Run_rejects_clean_connect_end_stream_without_output(t *testing.T) {
 	// Given
 	endStream := connectFrame([]byte(`{}`))
@@ -115,6 +132,23 @@ func Test_Client_Run_marks_internal_end_stream_replayable_without_leaking_detail
 	require.ErrorIs(t, err, ErrInternalStream)
 	require.True(t, IsReplayableCheckpointError(err))
 	require.EqualError(t, err, "Cursor stream failed: internal")
+	require.NotContains(t, err.Error(), "account@example.com")
+	require.NotContains(t, err.Error(), "bearer-secret")
+}
+
+func Test_Client_Run_marks_failed_precondition_end_stream_replayable_without_leaking_details(t *testing.T) {
+	// Given
+	endStream := connectFrame([]byte(`{"error":{"code":"failed_precondition","message":"account@example.com bearer-secret"}}`))
+	endStream[0] = 0x02
+	body := newChunkBody(endStream)
+	client := newTestClient(t, staticResponseTransport(body), Config{})
+
+	// When
+	_, err := client.Run(context.Background(), validRunInput(), func(cursorproto.ServerEvent) error { return nil })
+
+	// Then
+	require.True(t, IsReplayableCheckpointError(err))
+	require.EqualError(t, err, "Cursor stream failed: failed_precondition")
 	require.NotContains(t, err.Error(), "account@example.com")
 	require.NotContains(t, err.Error(), "bearer-secret")
 }

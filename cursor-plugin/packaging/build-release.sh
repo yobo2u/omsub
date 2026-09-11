@@ -3,7 +3,7 @@ set -eu
 
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 project_dir=$(CDPATH='' cd -- "$script_dir/.." && pwd)
-version=${1:-0.5.9}
+version=${1:-0.5.10}
 output_dir=${2:-"$project_dir/release"}
 binary=${CURSOR_PLUGIN_BINARY:-"$project_dir/cursor.so"}
 
@@ -23,6 +23,7 @@ cp "$project_dir/DESIGN.md" "$package_dir/DESIGN.md"
 cp "$project_dir/DISCLAIMER.md" "$package_dir/DISCLAIMER.md"
 cp "$project_dir/LICENSE" "$package_dir/LICENSE"
 cp "$project_dir/THIRD_PARTY_NOTICES.md" "$package_dir/THIRD_PARTY_NOTICES.md"
+cp -R "$project_dir/docs" "$package_dir/docs"
 
 if command -v sha256sum >/dev/null 2>&1; then
 	(cd "$package_dir" && sha256sum bin/linux/amd64/cursor.so > SHA256SUMS)

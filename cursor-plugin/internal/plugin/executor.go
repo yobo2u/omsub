@@ -30,6 +30,8 @@ func (handler *Handler) execute(ctx context.Context, raw []byte) (any, error) {
 		switch event.Kind {
 		case cursorproto.EventText:
 			turn.AddText(event.Text)
+		case cursorproto.EventImage:
+			turn.AddImage(event.MIMEType, event.ImageData)
 		case cursorproto.EventToolCall:
 			turn.AddToolCall(event.ID, event.Name, event.Arguments)
 		}
@@ -75,6 +77,12 @@ func (handler *Handler) runStream(parent context.Context, request executorReques
 		switch event.Kind {
 		case cursorproto.EventText:
 			chunk, err := turn.StreamChunk(event.Text)
+			if err != nil {
+				return err
+			}
+			return handler.emitter.Emit(ctx, request.StreamID, chunk)
+		case cursorproto.EventImage:
+			chunk, err := turn.StreamImage(event.MIMEType, event.ImageData)
 			if err != nil {
 				return err
 			}

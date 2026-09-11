@@ -162,6 +162,68 @@ func Test_Turn_rejects_whitespace_only_completion_without_tool_calls(t *testing.
 	require.ErrorContains(t, err, "no text or tool calls")
 }
 
+func Test_Turn_emits_image_only_completion_in_chat_images_shape(t *testing.T) {
+	turn := NewTurn("cursor/grok-4.6")
+	turn.AddImage("image/png", []byte("image"))
+
+	payload, err := turn.Completion("draw a fox")
+
+	require.NoError(t, err)
+	var response struct {
+		Choices []struct {
+			Message struct {
+				Images []struct {
+					Index    int    `json:"index"`
+					Type     string `json:"type"`
+					ImageURL struct {
+						URL string `json:"url"`
+					} `json:"image_url"`
+				} `json:"images"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	require.NoError(t, json.Unmarshal(payload, &response))
+	require.Len(t, response.Choices, 1)
+	require.Len(t, response.Choices[0].Message.Images, 1)
+	require.Zero(t, response.Choices[0].Message.Images[0].Index)
+	require.Equal(t, "image_url", response.Choices[0].Message.Images[0].Type)
+	require.Equal(t, "data:image/png;base64,aW1hZ2U=", response.Choices[0].Message.Images[0].ImageURL.URL)
+}
+
+func Test_Turn_emits_generated_image_in_stream_delta(t *testing.T) {
+	turn := NewTurn("cursor/grok-4.6")
+
+	payload, err := turn.StreamImage("image/png", []byte("image"))
+
+	require.NoError(t, err)
+	var response struct {
+		Choices []struct {
+			Delta struct {
+				Images []struct {
+					Index    int `json:"index"`
+					ImageURL struct {
+						URL string `json:"url"`
+					} `json:"image_url"`
+				} `json:"images"`
+			} `json:"delta"`
+		} `json:"choices"`
+	}
+	require.NoError(t, json.Unmarshal(payload, &response))
+	require.Len(t, response.Choices, 1)
+	require.Len(t, response.Choices[0].Delta.Images, 1)
+	require.Zero(t, response.Choices[0].Delta.Images[0].Index)
+	require.Equal(t, "data:image/png;base64,aW1hZ2U=", response.Choices[0].Delta.Images[0].ImageURL.URL)
+}
+
+func Test_Turn_rejects_invalid_generated_image(t *testing.T) {
+	turn := NewTurn("cursor/grok-4.6")
+	turn.AddImage("text/plain", []byte("not an image"))
+
+	_, err := turn.Completion("draw a fox")
+
+	require.ErrorContains(t, err, "requires an image MIME type and data")
+}
+
 func isToolCallIDLineBreak(character rune) bool {
 	return unicode.IsControl(character) || unicode.In(character, unicode.Zl, unicode.Zp)
 }

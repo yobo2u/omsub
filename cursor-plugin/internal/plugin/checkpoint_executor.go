@@ -14,6 +14,7 @@ import (
 type runObservation struct {
 	text     strings.Builder
 	toolCall bool
+	image    bool
 }
 
 func (handler *Handler) runCheckpointed(
@@ -87,7 +88,7 @@ func (handler *Handler) runCheckpointed(
 		}
 		return result, runErr
 	}
-	if result.ToolExposed || observation.toolCall || result.ConversationID == "" || len(result.Checkpoint) == 0 || observation.text.Len() == 0 {
+	if result.ToolExposed || observation.toolCall || observation.image || result.ConversationID == "" || len(result.Checkpoint) == 0 || observation.text.Len() == 0 {
 		return result, nil
 	}
 	confirmedLineage := chat.LineageWithAssistant(observation.text.String())
@@ -119,6 +120,8 @@ func (handler *Handler) runAttempt(
 			observation.text.WriteString(event.Text)
 		case cursorproto.EventToolCall:
 			observation.toolCall = true
+		case cursorproto.EventImage:
+			observation.image = true
 		}
 		return emit(event)
 	})
@@ -142,7 +145,7 @@ func shouldRetryFresh(
 ) bool {
 	retryable := cursorapi.IsReplayableCheckpointError(err)
 	return input.Mode == cursorproto.CheckpointSuffix && retryable &&
-		!result.OutputExposed && !result.ToolExposed && observation.text.Len() == 0 && !observation.toolCall && !hasToolResult
+		!result.OutputExposed && !result.ToolExposed && observation.text.Len() == 0 && !observation.toolCall && !observation.image && !hasToolResult
 }
 
 func lineageDigests(digests []openai.Digest) []string {

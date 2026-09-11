@@ -22,11 +22,19 @@ type RunRequest struct {
 	System         string
 	Prompt         string
 	TimeZone       string
+	WorkspacePaths []string
+	ProjectFolder  string
 	Tools          []ToolDefinition
 	Images         []ImageAttachment
 	Attachments    []FileAttachment
 	Mode           ContinuationMode
 	Checkpoint     []byte
+}
+
+type RequestEnvironment struct {
+	TimeZone       string
+	WorkspacePaths []string
+	ProjectFolder  string
 }
 
 func EncodeRunRequest(request RunRequest) ([]byte, error) {
@@ -132,7 +140,7 @@ func buildAction(run protoreflect.Message, request RunRequest) (protoreflect.Mes
 		if err != nil {
 			return nil, err
 		}
-		if err := addRequestContext(resume, request.TimeZone); err != nil {
+		if err := addRequestContext(resume, request); err != nil {
 			return nil, err
 		}
 		if err := setMessage(action, "resume_action", resume); err != nil {
@@ -164,7 +172,7 @@ func buildAction(run protoreflect.Message, request RunRequest) (protoreflect.Mes
 	if err := setMessage(userAction, "user_message", userMessage); err != nil {
 		return nil, err
 	}
-	if err := addRequestContext(userAction, request.TimeZone); err != nil {
+	if err := addRequestContext(userAction, request); err != nil {
 		return nil, err
 	}
 	if err := setMessage(action, "user_message_action", userAction); err != nil {
@@ -173,25 +181,51 @@ func buildAction(run protoreflect.Message, request RunRequest) (protoreflect.Mes
 	return action, nil
 }
 
-func addRequestContext(parent protoreflect.Message, timeZone string) error {
+func addRequestContext(parent protoreflect.Message, request RunRequest) error {
 	requestContext, err := nestedMessage(parent, "request_context")
 	if err != nil {
 		return err
 	}
+	if err := populateRequestContext(requestContext, RequestEnvironment{
+		TimeZone: request.TimeZone, WorkspacePaths: request.WorkspacePaths, ProjectFolder: request.ProjectFolder,
+	}); err != nil {
+		return err
+	}
+	return setMessage(parent, "request_context", requestContext)
+}
+
+func populateRequestContext(requestContext protoreflect.Message, request RequestEnvironment) error {
 	environment, err := nestedMessage(requestContext, "env")
 	if err != nil {
 		return err
 	}
-	if timeZone == "" {
-		timeZone = "UTC"
+	if request.TimeZone == "" {
+		request.TimeZone = "UTC"
 	}
-	if err := setString(environment, "time_zone", timeZone); err != nil {
+	if err := setString(environment, "time_zone", request.TimeZone); err != nil {
 		return err
+	}
+	workspacePaths, err := requireField(environment, "workspace_paths")
+	if err != nil {
+		return err
+	}
+	if !workspacePaths.IsList() || workspacePaths.Kind() != protoreflect.StringKind {
+		return fmt.Errorf("Cursor field %q is not a string list", workspacePaths.Name())
+	}
+	for _, path := range request.WorkspacePaths {
+		if path != "" {
+			environment.Mutable(workspacePaths).List().Append(protoreflect.ValueOfString(path))
+		}
+	}
+	if request.ProjectFolder != "" {
+		if err := setString(environment, "project_folder", request.ProjectFolder); err != nil {
+			return err
+		}
 	}
 	if err := setMessage(requestContext, "env", environment); err != nil {
 		return err
 	}
-	return setMessage(parent, "request_context", requestContext)
+	return nil
 }
 
 func EncodeClientHeartbeat() ([]byte, error) {

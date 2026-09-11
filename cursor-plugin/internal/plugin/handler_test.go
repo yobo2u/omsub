@@ -31,7 +31,7 @@ func Test_Handler_Register_declares_cursor_auth_models_and_executor(t *testing.T
 	require.Contains(t, string(response.Result), `"usage_plugin":false`)
 	require.Contains(t, string(response.Result), `"request_interceptor":true`)
 	require.Contains(t, string(response.Result), `"request_lifecycle_plugin":true`)
-	require.Contains(t, string(response.Result), `"Version":"0.5.9"`)
+	require.Contains(t, string(response.Result), `"Version":"0.5.10"`)
 	require.Contains(t, string(response.Result), `"GitHubRepository":"https://github.com/yobo2u/omsub"`)
 }
 
@@ -202,6 +202,71 @@ func Test_Handler_ExecuteStream_emits_tool_call_and_tool_finish_reason(t *testin
 	require.Equal(t, "[DONE]", string(emitter.payloads[2]))
 }
 
+func Test_Handler_Execute_returns_generated_image(t *testing.T) {
+	handler := NewHandler(Dependencies{Cursor: imageCursorClient{}})
+	credentials, err := cursorauth.MarshalCredentials(cursorauth.Credentials{
+		AccessToken: "access", RefreshToken: "refresh", Type: "cursor",
+	})
+	require.NoError(t, err)
+	request := executorRequest{
+		StorageJSON: credentials,
+		Payload:     []byte(`{"model":"cursor/grok-4.6","messages":[{"role":"user","content":"draw a fox"}]}`),
+	}
+	rawRequest, err := json.Marshal(request)
+	require.NoError(t, err)
+
+	raw := handler.Call(context.Background(), "executor.execute", rawRequest)
+
+	var response envelope
+	require.NoError(t, json.Unmarshal(raw, &response))
+	require.True(t, response.OK)
+	var result executorResponse
+	require.NoError(t, json.Unmarshal(response.Result, &result))
+	var completion struct {
+		Choices []struct {
+			Message struct {
+				Images []struct {
+					ImageURL struct {
+						URL string `json:"url"`
+					} `json:"image_url"`
+				} `json:"images"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	require.NoError(t, json.Unmarshal(result.Payload, &completion))
+	require.Len(t, completion.Choices, 1)
+	require.Len(t, completion.Choices[0].Message.Images, 1)
+	require.Equal(t, "data:image/png;base64,aW1hZ2U=", completion.Choices[0].Message.Images[0].ImageURL.URL)
+}
+
+func Test_Handler_ExecuteStream_emits_generated_image_and_done(t *testing.T) {
+	emitter := &captureEmitter{done: make(chan struct{})}
+	handler := NewHandler(Dependencies{Cursor: imageCursorClient{}, Emitter: emitter})
+	credentials, err := cursorauth.MarshalCredentials(cursorauth.Credentials{
+		AccessToken: "access", RefreshToken: "refresh", Type: "cursor",
+	})
+	require.NoError(t, err)
+	request := executorRequest{
+		StreamID: "stream-image", StorageJSON: credentials,
+		Payload: []byte(`{"model":"cursor/grok-4.6","stream":true,"messages":[{"role":"user","content":"draw a fox"}]}`),
+	}
+	rawRequest, err := json.Marshal(request)
+	require.NoError(t, err)
+
+	raw := handler.Call(context.Background(), "executor.execute_stream", rawRequest)
+	<-emitter.done
+
+	var response envelope
+	require.NoError(t, json.Unmarshal(raw, &response))
+	require.True(t, response.OK)
+	require.NoError(t, emitter.closeError)
+	require.Len(t, emitter.payloads, 3)
+	require.Contains(t, string(emitter.payloads[0]), `"images"`)
+	require.Contains(t, string(emitter.payloads[0]), `data:image/png;base64,aW1hZ2U=`)
+	require.Contains(t, string(emitter.payloads[1]), `"finish_reason":"stop"`)
+	require.Equal(t, "[DONE]", string(emitter.payloads[2]))
+}
+
 func Test_Handler_Execute_rejects_empty_cursor_completion(t *testing.T) {
 	handler := NewHandler(Dependencies{Cursor: emptyCursorClient{}})
 	credentials, err := cursorauth.MarshalCredentials(cursorauth.Credentials{
@@ -306,6 +371,19 @@ func (emptyCursorClient) Run(_ context.Context, _ cursorapi.RunInput, emit func(
 
 func (emptyCursorClient) DiscoverModels(context.Context, string) ([]string, error) {
 	return []string{"auto"}, nil
+}
+
+type imageCursorClient struct{}
+
+func (imageCursorClient) Run(_ context.Context, _ cursorapi.RunInput, emit func(cursorproto.ServerEvent) error) (cursorapi.RunResult, error) {
+	if err := emit(cursorproto.ServerEvent{Kind: cursorproto.EventImage, MIMEType: "image/png", ImageData: []byte("image")}); err != nil {
+		return cursorapi.RunResult{OutputExposed: true}, err
+	}
+	return cursorapi.RunResult{OutputExposed: true}, emit(cursorproto.ServerEvent{Kind: cursorproto.EventDone})
+}
+
+func (imageCursorClient) DiscoverModels(context.Context, string) ([]string, error) {
+	return []string{"grok-4.6"}, nil
 }
 
 func (*toolCursorClient) DiscoverModels(context.Context, string) ([]string, error) {

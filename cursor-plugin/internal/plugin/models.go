@@ -63,6 +63,8 @@ func modelResponse(ids []string) any {
 			OwnedBy:                    "cursor",
 			DisplayName:                "Cursor " + id,
 			SupportedGenerationMethods: []string{"chat"},
+			SupportedInputModalities:   []string{"text", "image"},
+			SupportedOutputModalities:  []string{"text", "image"},
 			ContextLength:              200000,
 			MaxCompletionTokens:        32768,
 			UserDefined:                true,

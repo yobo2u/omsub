@@ -19,6 +19,8 @@ func Test_EncodeRunRequest_places_model_and_prompt_in_wire_message(t *testing.T)
 		System:         "Answer briefly.",
 		Prompt:         "Reply with cursor-plugin-ok",
 		TimeZone:       "Asia/Shanghai",
+		WorkspacePaths: []string{"/workspace"},
+		ProjectFolder:  "/root/.cursor/projects/workspace",
 	}
 
 	// When
@@ -41,6 +43,10 @@ func Test_EncodeRunRequest_places_model_and_prompt_in_wire_message(t *testing.T)
 	requestContext := userAction.Get(field(userAction, "request_context")).Message()
 	environment := requestContext.Get(field(requestContext, "env")).Message()
 	require.Equal(t, "Asia/Shanghai", environment.Get(field(environment, "time_zone")).String())
+	workspacePaths := environment.Get(field(environment, "workspace_paths")).List()
+	require.Equal(t, 1, workspacePaths.Len())
+	require.Equal(t, "/workspace", workspacePaths.Get(0).String())
+	require.Equal(t, "/root/.cursor/projects/workspace", environment.Get(field(environment, "project_folder")).String())
 }
 
 func Test_EncodeRunRequest_registers_tools_images_and_file_attachments(t *testing.T) {
@@ -121,6 +127,25 @@ func Test_DecodeServerEvent_names_ignored_top_level_message(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, EventIgnored, event.Kind)
 	require.Equal(t, "kv_server_message", event.Type)
+}
+
+func Test_DecodeServerEvent_names_ignored_interaction_update(t *testing.T) {
+	server, err := newMessage("AgentServerMessage")
+	require.NoError(t, err)
+	interaction, err := nestedMessage(server, "interaction_update")
+	require.NoError(t, err)
+	started, err := nestedMessage(interaction, "tool_call_started")
+	require.NoError(t, err)
+	require.NoError(t, setMessage(interaction, "tool_call_started", started))
+	require.NoError(t, setMessage(server, "interaction_update", interaction))
+	raw, err := proto.Marshal(server)
+	require.NoError(t, err)
+
+	event, err := DecodeServerEvent(raw)
+
+	require.NoError(t, err)
+	require.Equal(t, EventIgnored, event.Kind)
+	require.Equal(t, "interaction_update.tool_call_started", event.Type)
 }
 
 func Test_DecodeServerEvent_maps_completed_mcp_tool_call(t *testing.T) {

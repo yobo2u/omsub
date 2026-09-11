@@ -2,6 +2,7 @@ package openai
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,7 @@ type Turn struct {
 	created      int64
 	text         string
 	tools        []responseToolCall
+	images       []responseImage
 	toolIDOwners map[string]string
 	responseErr  error
 }
@@ -46,6 +48,17 @@ type assistantMessage struct {
 	Role      string             `json:"role,omitempty"`
 	Content   string             `json:"content,omitempty"`
 	ToolCalls []responseToolCall `json:"tool_calls,omitempty"`
+	Images    []responseImage    `json:"images,omitempty"`
+}
+
+type responseImage struct {
+	Index    int              `json:"index"`
+	Type     string           `json:"type"`
+	ImageURL responseImageURL `json:"image_url"`
+}
+
+type responseImageURL struct {
+	URL string `json:"url"`
 }
 
 type responseToolCall struct {
@@ -98,6 +111,19 @@ func (turn *Turn) StreamToolCall(id, name, arguments string) ([]byte, error) {
 	return marshalStreamPayload(payload)
 }
 
+func (turn *Turn) StreamImage(mimeType string, data []byte) ([]byte, error) {
+	image, err := newResponseImage(len(turn.images), mimeType, data)
+	if err != nil {
+		return nil, err
+	}
+	turn.images = append(turn.images, image)
+	payload := chatCompletion{
+		ID: turn.id, Object: "chat.completion.chunk", Created: turn.created, Model: turn.model,
+		Choices: []completionChoice{{Index: 0, Delta: &assistantMessage{Role: "assistant", Images: []responseImage{image}}}},
+	}
+	return marshalStreamPayload(payload)
+}
+
 func (turn *Turn) FinalChunk(prompt string) ([]byte, error) {
 	if err := turn.validateOutput(); err != nil {
 		return nil, err
@@ -126,7 +152,7 @@ func (turn *Turn) Completion(prompt string) ([]byte, error) {
 		Model:   turn.model,
 		Choices: []completionChoice{{
 			Index:        0,
-			Message:      &assistantMessage{Role: "assistant", Content: turn.text, ToolCalls: turn.tools},
+			Message:      &assistantMessage{Role: "assistant", Content: turn.text, ToolCalls: turn.tools, Images: turn.images},
 			FinishReason: &finish,
 		}},
 		Usage: turn.EstimatedUsage(prompt),
@@ -155,14 +181,39 @@ func (turn *Turn) AddToolCall(id, name, arguments string) {
 	})
 }
 
+func (turn *Turn) AddImage(mimeType string, data []byte) {
+	image, err := newResponseImage(len(turn.images), mimeType, data)
+	if err != nil {
+		if turn.responseErr == nil {
+			turn.responseErr = err
+		}
+		return
+	}
+	turn.images = append(turn.images, image)
+}
+
 func (turn *Turn) validateOutput() error {
 	if turn.responseErr != nil {
 		return turn.responseErr
 	}
-	if strings.TrimSpace(turn.text) == "" && len(turn.tools) == 0 {
-		return fmt.Errorf("Cursor response has no text or tool calls")
+	if strings.TrimSpace(turn.text) == "" && len(turn.tools) == 0 && len(turn.images) == 0 {
+		return fmt.Errorf("Cursor response has no text or tool calls (and no images)")
 	}
 	return nil
+}
+
+func newResponseImage(index int, mimeType string, data []byte) (responseImage, error) {
+	mimeType = strings.TrimSpace(mimeType)
+	if !strings.HasPrefix(mimeType, "image/") || len(data) == 0 {
+		return responseImage{}, fmt.Errorf("Cursor generated image requires an image MIME type and data")
+	}
+	return responseImage{
+		Index: index,
+		Type:  "image_url",
+		ImageURL: responseImageURL{
+			URL: "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data),
+		},
+	}, nil
 }
 
 func (turn *Turn) EstimatedUsage(prompt string) Usage {

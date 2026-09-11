@@ -46,13 +46,18 @@ func (client *Client) Run(
 		conversationID = "cursor_" + strings.ReplaceAll(randomUUID(), "-", "")
 	}
 	result := RunResult{ConversationID: conversationID}
+	environment := cursorproto.RequestEnvironment{
+		TimeZone: "UTC", WorkspacePaths: []string{client.workspacePath}, ProjectFolder: client.projectFolder,
+	}
 	runPayload, err := cursorproto.EncodeRunRequest(cursorproto.RunRequest{
 		ConversationID: conversationID,
 		MessageID:      randomUUID(),
 		Model:          input.Model,
 		System:         input.System,
 		Prompt:         input.Prompt,
-		TimeZone:       "UTC",
+		TimeZone:       environment.TimeZone,
+		WorkspacePaths: environment.WorkspacePaths,
+		ProjectFolder:  environment.ProjectFolder,
 		Tools:          input.Tools,
 		Images:         input.Images,
 		Attachments:    input.Attachments,
@@ -103,12 +108,13 @@ func (client *Client) Run(
 		close(stopWriter)
 		return result, errors.Join(runStatusError(status, body), bodyErr, readerErr, <-writeResult, runResponse.Body.Close(), runBodyWriter.Close())
 	}
+	imageWrites := cursorproto.NewImageWriteExecutor(environment.ProjectFolder)
 	result, streamErr := readRunStream(
-		runContext, runResponse.Body, result, emit, cursorproto.NewBlobStore(), outbound, watchdogs, client.trailingDrain,
+		runContext, runResponse.Body, result, emit, cursorproto.NewBlobStore(), imageWrites, environment, outbound, watchdogs, client.trailingDrain,
 	)
 	close(stopWriter)
 	readerErr := runBodyReader.Close()
-	return result, errors.Join(streamErr, readerErr, <-writeResult, runResponse.Body.Close(), runBodyWriter.Close())
+	return result, errors.Join(streamErr, readerErr, <-writeResult, runResponse.Body.Close(), runBodyWriter.Close(), imageWrites.Cleanup())
 }
 
 func writeRunFrames(

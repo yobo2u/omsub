@@ -8,9 +8,10 @@ import (
 )
 
 var (
-	ErrInvalidArgument = errors.New("Cursor invalid argument")
-	ErrEmptyCompletion = errors.New("Cursor stream completed without output")
-	ErrInternalStream  = errors.New("Cursor internal stream failure")
+	ErrInvalidArgument    = errors.New("Cursor invalid argument")
+	ErrEmptyCompletion    = errors.New("Cursor stream completed without output")
+	ErrInternalStream     = errors.New("Cursor internal stream failure")
+	ErrFailedPrecondition = errors.New("Cursor failed precondition")
 )
 
 type connectStreamError struct {
@@ -39,7 +40,8 @@ func IsInvalidArgument(err error) bool {
 }
 
 func IsReplayableCheckpointError(err error) bool {
-	return IsInvalidArgument(err) || errors.Is(err, ErrEmptyCompletion) || errors.Is(err, ErrInternalStream)
+	return IsInvalidArgument(err) || errors.Is(err, ErrEmptyCompletion) || errors.Is(err, ErrInternalStream) ||
+		errors.Is(err, ErrFailedPrecondition) || errors.Is(err, ErrProgressTimeout)
 }
 
 func runStatusError(status int, body []byte) error {
@@ -69,8 +71,10 @@ func connectEndStreamError(payload []byte) error {
 		return fmt.Errorf("%w: Cursor rejected the request", ErrInvalidArgument)
 	case "internal":
 		return connectStreamError{code: code, cause: ErrInternalStream}
+	case "failed_precondition":
+		return connectStreamError{code: code, cause: ErrFailedPrecondition}
 	case "canceled", "unknown", "deadline_exceeded", "not_found", "already_exists", "permission_denied",
-		"resource_exhausted", "failed_precondition", "aborted", "out_of_range", "unimplemented",
+		"resource_exhausted", "aborted", "out_of_range", "unimplemented",
 		"unavailable", "data_loss", "unauthenticated":
 		return connectStreamError{code: code}
 	default:

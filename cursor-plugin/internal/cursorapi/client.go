@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -23,7 +25,7 @@ const (
 	defaultProgressTimeout   = 90 * time.Second
 	defaultOverallTimeout    = 15 * time.Minute
 	defaultTrailingDrain     = 100 * time.Millisecond
-	defaultClientVersion     = "cli-2026.07.08-0c04a8a"
+	defaultClientVersion     = "cli-2026.07.16-899851b"
 )
 
 var (
@@ -50,6 +52,8 @@ type Client struct {
 	baseURL       *url.URL
 	clientVersion string
 	httpClient    *http.Client
+	workspacePath string
+	projectFolder string
 	heartbeat     time.Duration
 	firstData     time.Duration
 	frameSilence  time.Duration
@@ -65,6 +69,10 @@ func NewClient(config Config) (*Client, error) {
 	}
 	if baseURL.Scheme != "https" || baseURL.Host == "" {
 		return nil, errors.New("Cursor base URL must be HTTPS")
+	}
+	workspacePath, projectFolder, err := cursorWorkspaceContext()
+	if err != nil {
+		return nil, err
 	}
 	client := config.HTTPClient
 	if client == nil {
@@ -100,6 +108,8 @@ func NewClient(config Config) (*Client, error) {
 		baseURL:       baseURL,
 		clientVersion: config.ClientVersion,
 		httpClient:    client,
+		workspacePath: workspacePath,
+		projectFolder: projectFolder,
 		heartbeat:     config.HeartbeatInterval,
 		firstData:     config.FirstDataTimeout,
 		frameSilence:  config.FrameSilenceTimeout,
@@ -107,6 +117,36 @@ func NewClient(config Config) (*Client, error) {
 		overall:       config.OverallTimeout,
 		trailingDrain: config.TrailingDrainTimeout,
 	}, nil
+}
+
+func cursorWorkspaceContext() (string, string, error) {
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		return "", "", fmt.Errorf("resolve Cursor workspace directory: %w", err)
+	}
+	homeDirectory, err := os.UserHomeDir()
+	if err != nil || homeDirectory == "" {
+		homeDirectory = workingDirectory
+	}
+	projectName := cursorProjectName(workingDirectory)
+	return workingDirectory, filepath.Join(homeDirectory, ".cursor", "projects", projectName), nil
+}
+
+func cursorProjectName(workspacePath string) string {
+	var name strings.Builder
+	separator := false
+	for _, character := range workspacePath {
+		if character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' {
+			if separator && name.Len() > 0 {
+				name.WriteByte('-')
+			}
+			name.WriteRune(character)
+			separator = false
+			continue
+		}
+		separator = true
+	}
+	return name.String()
 }
 
 func (client *Client) DiscoverModels(ctx context.Context, accessToken string) ([]string, error) {

@@ -63,6 +63,8 @@ type modelInfo struct {
 	OwnedBy                    string   `json:"OwnedBy"`
 	DisplayName                string   `json:"DisplayName"`
 	SupportedGenerationMethods []string `json:"SupportedGenerationMethods"`
+	SupportedInputModalities   []string `json:"SupportedInputModalities"`
+	SupportedOutputModalities  []string `json:"SupportedOutputModalities"`
 	ContextLength              int64    `json:"ContextLength"`
 	MaxCompletionTokens        int64    `json:"MaxCompletionTokens"`
 	UserDefined                bool     `json:"UserDefined"`
