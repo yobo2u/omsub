@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -11,11 +12,27 @@ import (
 	"cursorplugin/internal/cursorapi"
 	"cursorplugin/internal/cursorauth"
 	"cursorplugin/internal/cursorproto"
+	"cursorplugin/internal/cursorusage"
 	"cursorplugin/internal/openai"
 
 	"github.com/stretchr/testify/require"
 )
 
+type stubUsage struct {
+	snapshot cursorusage.Snapshot
+	err      error
+}
+
+func (stub stubUsage) Fetch(context.Context, string, string) (cursorusage.Snapshot, error) {
+	return stub.snapshot, stub.err
+}
+
+func testHandler(deps Dependencies) *Handler {
+	if deps.Usage == nil {
+		deps.Usage = stubUsage{err: errors.New("Cursor dashboard usage is disabled in tests")}
+	}
+	return NewHandler(deps)
+}
 func Test_Handler_ManagementStatus_reports_models_disabled_rules_and_honest_quota_state(t *testing.T) {
 	credentials, err := cursorauth.MarshalCredentials(cursorauth.Credentials{
 		AccessToken:    "secret-access",
@@ -26,7 +43,7 @@ func Test_Handler_ManagementStatus_reports_models_disabled_rules_and_honest_quot
 	})
 	require.NoError(t, err)
 	host := &fakeHostCaller{credentialJSON: credentials}
-	handler := NewHandler(Dependencies{
+	handler := testHandler(Dependencies{
 		Cursor: fakeModelCursorClient{models: []string{"auto", "gpt-5"}},
 		Host:   host,
 	})
@@ -36,7 +53,7 @@ func Test_Handler_ManagementStatus_reports_models_disabled_rules_and_honest_quot
 	require.NoError(t, err)
 	require.Equal(t, 200, response.StatusCode)
 	require.Contains(t, string(response.Body), `"subscription_quota":{"status":"unavailable"`)
-	require.Contains(t, string(response.Body), `"reason":"Cursor does not publish a subscription remaining-quota API"`)
+	require.Contains(t, string(response.Body), `"reason":"Cursor dashboard usage is disabled in tests"`)
 	require.Contains(t, string(response.Body), `"id":"gpt-5","disabled":true`)
 	require.NotContains(t, string(response.Body), "secret-access")
 	require.NotContains(t, string(response.Body), "secret-refresh")
@@ -57,7 +74,7 @@ func Test_Handler_ManagementStatus_ignores_runtime_projection_of_physical_cursor
 			{"auth_index":"cursor-auth-runtime","name":"cursor-auth.json","type":"cursor","provider":"cursor","status":"active","runtime_only":true}
 		]}`),
 	}
-	handler := NewHandler(Dependencies{Cursor: fakeModelCursorClient{models: []string{"auto"}}, Host: host})
+	handler := testHandler(Dependencies{Cursor: fakeModelCursorClient{models: []string{"auto"}}, Host: host})
 
 	response, err := handler.managementStatus(context.Background())
 
@@ -83,7 +100,7 @@ func Test_Handler_ManagementStatus_deduplicates_rows_for_same_cursor_identity(t 
 			{"auth_index":"cursor-auth-stale","name":"legacy-cursor-auth.json","type":"cursor","provider":"cursor","status":"active"}
 		]}`),
 	}
-	handler := NewHandler(Dependencies{Cursor: fakeModelCursorClient{models: []string{"auto"}}, Host: host})
+	handler := testHandler(Dependencies{Cursor: fakeModelCursorClient{models: []string{"auto"}}, Host: host})
 
 	response, err := handler.managementStatus(context.Background())
 
@@ -109,7 +126,7 @@ func Test_Handler_ManagementStatus_deduplicates_same_email_with_different_accoun
 		]}`),
 		credentialJSONByIndex: map[string]json.RawMessage{"cursor-auth-1": first, "cursor-auth-2": second},
 	}
-	handler := NewHandler(Dependencies{Cursor: fakeModelCursorClient{models: []string{"auto"}}, Host: host})
+	handler := testHandler(Dependencies{Cursor: fakeModelCursorClient{models: []string{"auto"}}, Host: host})
 	handler.usage.recordTokens("cursor-auth-1", openai.Usage{PromptTokens: 3, CompletionTokens: 5, TotalTokens: 8})
 	handler.usage.recordTokens("cursor-auth-2", openai.Usage{PromptTokens: 7, CompletionTokens: 11, TotalTokens: 18})
 	observeRequestAuth(t, handler, "request-1", "cursor-auth-1")
@@ -164,7 +181,7 @@ func Test_Handler_ManagementStatus_merges_transitively_bridged_cursor_identities
 			"cursor-auth-1": first, "cursor-auth-2": second, "cursor-auth-bridge": bridge,
 		},
 	}
-	handler := NewHandler(Dependencies{Cursor: fakeModelCursorClient{models: []string{"auto"}}, Host: host})
+	handler := testHandler(Dependencies{Cursor: fakeModelCursorClient{models: []string{"auto"}}, Host: host})
 
 	response, err := handler.managementStatus(context.Background())
 
@@ -193,7 +210,7 @@ func Test_Handler_ManagementStatus_ignores_stale_memory_only_cursor_record(t *te
 		]}`),
 		credentialJSONByIndex: map[string]json.RawMessage{"cursor-auth": persisted, "cursor-auth-stale": stale},
 	}
-	handler := NewHandler(Dependencies{Cursor: fakeModelCursorClient{models: []string{"auto"}}, Host: host})
+	handler := testHandler(Dependencies{Cursor: fakeModelCursorClient{models: []string{"auto"}}, Host: host})
 
 	// When
 	response, err := handler.managementStatus(context.Background())
@@ -214,7 +231,7 @@ func Test_Handler_UpdateDisabledModels_persists_rules_in_cursor_auth_without_los
 	})
 	require.NoError(t, err)
 	host := &fakeHostCaller{credentialJSON: credentials}
-	handler := NewHandler(Dependencies{
+	handler := testHandler(Dependencies{
 		Cursor: fakeModelCursorClient{models: []string{"auto", "gpt-5"}},
 		Host:   host,
 	})
@@ -239,7 +256,7 @@ func Test_Handler_ManagementStatus_includes_plugin_local_estimated_usage(t *test
 		Type:         "cursor",
 	})
 	require.NoError(t, err)
-	handler := NewHandler(Dependencies{
+	handler := testHandler(Dependencies{
 		Cursor: &recordingCursorClient{steps: []cursorRunStep{successfulTextStep("answer", "conversation-a", []byte("checkpoint-a"))}},
 		Host:   &fakeHostCaller{credentialJSON: credentials},
 	})
@@ -284,7 +301,7 @@ func Test_Handler_ManagementStatus_separates_plugin_outcomes_from_host_attempts_
 		{err: fmt.Errorf("transient Cursor timeout")},
 		successfulTextStep("answer", "conversation-a", []byte("checkpoint-a")),
 	}}
-	handler := NewHandler(Dependencies{Cursor: client, Host: host})
+	handler := testHandler(Dependencies{Cursor: client, Host: host})
 	request := executorFixture(t, "session-a", "account-a", "cursor-runtime-id", "auto", "", []map[string]any{textMessage("user", "question")})
 
 	observeRequestAuth(t, handler, "request-a", "cursor-runtime-id")
@@ -356,7 +373,7 @@ func Test_Handler_ManagementStatus_aggregates_checkpoint_metrics_without_sensiti
 		{result: cursorapi.RunResult{ConversationID: "conversation-secret", TTFT: 20 * time.Millisecond}, err: fmt.Errorf("checkpoint rejected: %w", cursorapi.ErrInvalidArgument)},
 		{events: []cursorproto.ServerEvent{{Kind: cursorproto.EventText, Text: "fallback-answer"}, {Kind: cursorproto.EventDone}}, result: cursorapi.RunResult{ConversationID: "fresh-conversation-secret", Checkpoint: []byte("fresh-checkpoint-secret"), OutputExposed: true, TTFT: 30 * time.Millisecond}},
 	}}
-	handler := NewHandler(Dependencies{Cursor: client, Host: &fakeHostCaller{credentialJSON: credentials}})
+	handler := testHandler(Dependencies{Cursor: client, Host: &fakeHostCaller{credentialJSON: credentials}})
 	seed := executorFixture(t, "session-secret", "account-a", "cursor-auth", "auto", "", []map[string]any{textMessage("user", "seed")})
 	continuation := executorFixture(t, "session-secret", "account-a", "cursor-auth", "auto", "", []map[string]any{
 		textMessage("user", "seed"), textMessage("assistant", "seed-answer"), textMessage("user", "next"),
@@ -407,9 +424,57 @@ func Test_Handler_ManagementStatus_aggregates_checkpoint_metrics_without_sensiti
 	require.NotContains(t, string(response.Body), "secret-access")
 }
 
+func Test_Handler_ManagementStatus_includes_cursor_dashboard_usage(t *testing.T) {
+	credentials, err := cursorauth.MarshalCredentials(cursorauth.Credentials{
+		AccessToken: "secret-access", RefreshToken: "secret-refresh", AccountID: "auth0|user-1", Type: "cursor",
+	})
+	require.NoError(t, err)
+	used := 220.73
+	estimated := 450.01
+	guaranteed := 20.0
+	otherUsed := 2108.35
+	handler := testHandler(Dependencies{
+		Cursor: fakeModelCursorClient{models: []string{"auto"}},
+		Host:   &fakeHostCaller{credentialJSON: credentials},
+		Usage: stubUsage{snapshot: cursorusage.Snapshot{
+			MembershipType:    "pro",
+			DisplayMessage:    "You've hit your usage limit",
+			AutoPercentUsed:   49.05,
+			APIPercentUsed:    100,
+			CursorModels:      cursorusage.Bucket{UsedUSD: &used, UsagePercent: 49.05, EstimatedTotalUSD: &estimated},
+			OtherModels:       cursorusage.Bucket{UsedUSD: &otherUsed, UsagePercent: 100, GuaranteedUSD: &guaranteed},
+			BillingCycleStart: time.Date(2026, 8, 24, 7, 46, 2, 0, time.UTC),
+			BillingCycleEnd:   time.Date(2026, 9, 24, 7, 46, 2, 0, time.UTC),
+		}},
+	})
+
+	response, err := handler.managementStatus(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, 200, response.StatusCode)
+	var status cursorManagementStatus
+	require.NoError(t, json.Unmarshal(response.Body, &status))
+	require.Len(t, status.Accounts, 1)
+	quota := status.Accounts[0].SubscriptionQuota
+	require.Equal(t, "available", quota.Status)
+	require.Equal(t, "pro", quota.MembershipType)
+	require.Equal(t, "You've hit your usage limit", quota.DisplayMessage)
+	require.NotNil(t, quota.CursorModels)
+	require.NotNil(t, quota.CursorModels.UsedUSD)
+	require.InDelta(t, 220.73, *quota.CursorModels.UsedUSD, 1e-9)
+	require.InDelta(t, 49.05, quota.CursorModels.UsagePercent, 1e-9)
+	require.NotNil(t, quota.CursorModels.EstimatedTotalUSD)
+	require.InDelta(t, 450.01, *quota.CursorModels.EstimatedTotalUSD, 1e-9)
+	require.NotNil(t, quota.OtherModels)
+	require.NotNil(t, quota.OtherModels.GuaranteedUSD)
+	require.EqualValues(t, 20, *quota.OtherModels.GuaranteedUSD)
+	require.NotContains(t, string(response.Body), "secret-access")
+	require.NotContains(t, string(response.Body), "secret-refresh")
+}
+
 func Test_Handler_ManagementResource_serves_bilingual_shell_without_exposing_auth_data(t *testing.T) {
 	// Given
-	handler := NewHandler(Dependencies{})
+	handler := testHandler(Dependencies{})
 	rawRequest, err := json.Marshal(managementRequest{
 		Method: "GET",
 		Path:   "/v0/resource/plugins/cursor/status",
@@ -466,8 +531,11 @@ func Test_Handler_ManagementResource_serves_bilingual_shell_without_exposing_aut
 	require.Contains(t, string(response.Body), `metric(translate("cachedTokens"), translate("unknown"))`)
 	require.Contains(t, string(response.Body), `checkpoint.ttft_average_ms == null ? translate("unknown")`)
 	require.Contains(t, string(response.Body), `<span class="nowrap" data-i18n="quotaUnknownTerm">“未知”</span>`)
-	require.Contains(t, string(response.Body), `quotaBodySuffixPrefix: "。缓\u2060存 Token 未\u2060知时会明确显\u2060示"`)
+	require.Contains(t, string(response.Body), `quotaBodySuffixPrefix: "仍然单独显示。缓\u2060存 Token 未\u2060知时会明确显\u2060示"`)
 	require.Contains(t, string(response.Body), `quotaUnknownTerm: "Unknown"`)
+	require.Contains(t, string(response.Body), `subscriptionUsage: "Cursor subscription usage"`)
+	require.Contains(t, string(response.Body), `cursorModelsUsed: "Cursor Models 已用"`)
+	require.Contains(t, string(response.Body), `formatUSD(cursor.used_usd)`)
 	require.Contains(t, string(response.Body), `quotaBodySuffixSuffix: " when unavailable."`)
 	require.Contains(t, string(response.Body), `.nowrap { white-space: nowrap; }`)
 	require.Contains(t, string(response.Body), `--focus: #1d4ed8;`)

@@ -148,7 +148,7 @@
     </header>
     <section class="panel warning" aria-labelledby="quota-title">
       <h2 id="quota-title" data-i18n="quotaTitle">订阅额度说明</h2>
-      <p><span data-i18n="quotaBodyPrefix">Cursor 未公开稳定的 OAuth </span><span class="nowrap" data-i18n="quotaBodyTerm">订阅剩余额度接口</span><span data-i18n="quotaAccuracyPrefix">。这里不会伪造</span><span class="nowrap" data-i18n="quotaAccuracyTerm">百分比</span><span data-i18n="quotaUsagePrefix">；仅显示插件进程启动后的</span><span class="nowrap" data-i18n="quotaUsageTerm">本地估算用量</span><span data-i18n="quotaUsageJoin">与</span><span class="nowrap" data-i18n="quotaStatusTerm">请求状态</span><span data-i18n="quotaBodySuffixPrefix">。缓存 Token 未知时会明确显示</span><span class="nowrap" data-i18n="quotaUnknownTerm">“未知”</span><span class="nowrap" data-i18n="quotaBodySuffixSuffix">。</span></p>
+      <p><span data-i18n="quotaBodyPrefix">管理页用当前账户的 Cursor dashboard 会话读取</span><span class="nowrap" data-i18n="quotaBodyTerm">本期官方用量</span><span data-i18n="quotaAccuracyPrefix">。百分比直接使用 Cursor 返回的</span><span class="nowrap" data-i18n="quotaAccuracyTerm">autoPercentUsed / apiPercentUsed</span><span data-i18n="quotaUsagePrefix">；金额来自聚合用量事件。插件进程内的</span><span class="nowrap" data-i18n="quotaUsageTerm">本地估算用量</span><span data-i18n="quotaUsageJoin">与</span><span class="nowrap" data-i18n="quotaStatusTerm">请求状态</span><span data-i18n="quotaBodySuffixPrefix">仍然单独显示。缓存 Token 未知时会明确显示</span><span class="nowrap" data-i18n="quotaUnknownTerm">“未知”</span><span class="nowrap" data-i18n="quotaBodySuffixSuffix">。</span></p>
     </section>
     <section class="panel" aria-labelledby="credential-title">
       <div class="credential-grid">
@@ -179,17 +179,27 @@
           headerJoin: "或",
           headerSuffix: "前端改造。",
           quotaTitle: "订阅额度说明",
-          quotaBodyPrefix: "Cursor 未公开稳定的 OAuth ",
-          quotaBodyTerm: "订阅剩余额度接口",
-          quotaAccuracyPrefix: "。这里不会伪造",
-          quotaAccuracyTerm: "百分比",
-          quotaUsagePrefix: "；仅显示插件进程启动后的",
+          quotaBodyPrefix: "管理页用当前账户的 Cursor dashboard 会话读取",
+          quotaBodyTerm: "本期官方用量",
+          quotaAccuracyPrefix: "。百分比直接使用 Cursor 返回的",
+          quotaAccuracyTerm: "autoPercentUsed / apiPercentUsed",
+          quotaUsagePrefix: "；金额来自聚合用量事件。插件进程内的",
           quotaUsageTerm: "本地估算用量",
           quotaUsageJoin: "与",
           quotaStatusTerm: "请求状态",
-          quotaBodySuffixPrefix: "。缓\u2060存 Token 未\u2060知时会明确显\u2060示",
+          quotaBodySuffixPrefix: "仍然单独显示。缓\u2060存 Token 未\u2060知时会明确显\u2060示",
           quotaUnknownTerm: "“未知”",
           quotaBodySuffixSuffix: "。",
+          subscriptionUsage: "Cursor 订阅用量",
+          subscriptionUsageHelp: "金额来自 get-aggregated-usage-events；百分比来自 usage-summary / get-current-period-usage，不会由插件自行推算剩余额度。",
+          cursorModelsUsed: "Cursor Models 已用",
+          cursorModelsUsage: "Cursor Models 用量",
+          cursorModelsEstimatedTotal: "Cursor Models 估计总额",
+          otherModelsGuaranteed: "Other Models 保底额度",
+          otherModelsUsed: "Other Models 已用",
+          otherModelsUsage: "Other Models 用量",
+          billingCycle: "账单周期",
+          notAvailable: "N/A",
           managementKeyLabel: "管理密钥",
           keyHelp: "只保留在当前页面内存中，不写入浏览器存储。",
           loadStatus: "加载状态",
@@ -250,17 +260,27 @@
           headerJoin: "or",
           headerSuffix: "are required.",
           quotaTitle: "Subscription quota",
-          quotaBodyPrefix: "Cursor does not publish a stable OAuth API for ",
-          quotaBodyTerm: "remaining subscription quota",
-          quotaAccuracyPrefix: ". This page never invents ",
-          quotaAccuracyTerm: "a percentage",
-          quotaUsagePrefix: ". It shows only ",
+          quotaBodyPrefix: "This page reads the account's Cursor dashboard session for ",
+          quotaBodyTerm: "current-period official usage",
+          quotaAccuracyPrefix: ". Percentages come from Cursor's ",
+          quotaAccuracyTerm: "autoPercentUsed / apiPercentUsed",
+          quotaUsagePrefix: ". Dollar amounts come from aggregated usage events. Plugin-process ",
           quotaUsageTerm: "local estimated usage",
           quotaUsageJoin: " and ",
           quotaStatusTerm: "request status",
-          quotaBodySuffixPrefix: " since the plugin process started. Cached tokens are shown as ",
+          quotaBodySuffixPrefix: " remain separate. Cached tokens are shown as ",
           quotaUnknownTerm: "Unknown",
           quotaBodySuffixSuffix: " when unavailable.",
+          subscriptionUsage: "Cursor subscription usage",
+          subscriptionUsageHelp: "Dollar amounts come from get-aggregated-usage-events. Percentages come from usage-summary / get-current-period-usage. The plugin does not invent remaining quota.",
+          cursorModelsUsed: "Cursor Models used",
+          cursorModelsUsage: "Cursor Models usage",
+          cursorModelsEstimatedTotal: "Cursor Models estimated total",
+          otherModelsGuaranteed: "Other Models guaranteed",
+          otherModelsUsed: "Other Models used",
+          otherModelsUsage: "Other Models usage",
+          billingCycle: "Billing cycle",
+          notAvailable: "N/A",
           managementKeyLabel: "management key",
           keyHelp: "Kept only in this page's memory and never written to browser storage.",
           loadStatus: "Load status",
@@ -417,6 +437,23 @@
         return payload;
       }
 
+
+      function formatUSD(value) {
+        if (value == null || value === "" || Number.isNaN(Number(value))) return translate("unknown");
+        return `$${Number(value).toFixed(2)}`;
+      }
+
+      function formatPercent(value) {
+        if (value == null || value === "" || Number.isNaN(Number(value))) return translate("unknown");
+        return `${Number(value).toFixed(2)}%`;
+      }
+
+      function formatTime(value) {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return translate("unknown");
+        return date.toISOString().slice(0, 10);
+      }
+
       function metric(label, value) {
         const item = document.createElement("div");
         item.className = "metric";
@@ -466,10 +503,45 @@
         pill.textContent = statusLabel(account.status);
         head.append(titleWrap, pill);
 
+        const quota = account.subscription_quota || {};
+        const quotaSection = document.createElement("section");
+        quotaSection.className = "metric-section";
+        const quotaTitle = document.createElement("h3");
+        quotaTitle.textContent = translate("subscriptionUsage");
+        const quotaHelp = document.createElement("p");
+        quotaHelp.className = "muted";
+        quotaHelp.textContent = quota.status === "available"
+          ? [quota.display_message, translate("subscriptionUsageHelp")].filter(Boolean).join(" ")
+          : (quota.reason || translate("unavailable"));
+        const quotaGrid = document.createElement("div");
+        quotaGrid.className = "metrics";
+        if (quota.status === "available") {
+          const cursor = quota.cursor_models || {};
+          const other = quota.other_models || {};
+          quotaGrid.append(
+            metric(translate("cursorModelsUsed"), formatUSD(cursor.used_usd)),
+            metric(translate("cursorModelsUsage"), formatPercent(cursor.usage_percent)),
+            metric(translate("cursorModelsEstimatedTotal"), cursor.estimated_total_usd == null ? translate("notAvailable") : formatUSD(cursor.estimated_total_usd)),
+            metric(translate("otherModelsGuaranteed"), formatUSD(other.guaranteed_usd)),
+            metric(translate("otherModelsUsed"), formatUSD(other.used_usd)),
+            metric(translate("otherModelsUsage"), formatPercent(other.usage_percent))
+          );
+          if (quota.billing_cycle_start && quota.billing_cycle_end) {
+            const cycle = document.createElement("p");
+            cycle.className = "muted";
+            cycle.textContent = `${translate("billingCycle")}: ${formatTime(quota.billing_cycle_start)} – ${formatTime(quota.billing_cycle_end)}`;
+            quotaSection.append(quotaTitle, quotaHelp, quotaGrid, cycle);
+          } else {
+            quotaSection.append(quotaTitle, quotaHelp, quotaGrid);
+          }
+        } else {
+          quotaGrid.append(metric(translate("quotaBalance"), translate("unavailable")));
+          quotaSection.append(quotaTitle, quotaHelp, quotaGrid);
+        }
+
         const metrics = document.createElement("div");
         metrics.className = "metrics";
         metrics.append(
-          metric(translate("quotaBalance"), translate("unavailable")),
           metric(translate("localEstimatedTokens"), account.local_usage?.total_tokens || 0),
           metric(translate("pluginExecutorRuns"), account.local_usage?.executor_runs || 0),
           metric(translate("cachedTokens"), translate("unknown")),
@@ -593,7 +665,7 @@
         actions.append(save, disableAll);
         fieldset.append(legend, modelGrid);
         form.append(fieldset, accountNotice, actions);
-        card.append(head, metrics, logicalHelp, hostMetrics, checkpointMetrics, form);
+        card.append(head, quotaSection, metrics, logicalHelp, hostMetrics, checkpointMetrics, form);
         return card;
       }
 

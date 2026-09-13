@@ -1,4 +1,13 @@
+# CGO -buildmode=c-shared outputs
+/cursor.h
 /cursor.so
+
+# Local packaging output. Publish these from GitHub Releases, not git.
+/release/*.tar.gz
+/release/*.zip
 /release/checksums.txt
-/release/cursor-plugin-*.tar.gz
-/release/cursor_*.zip
+
+# Go test and coverage leftovers
+*.test
+*.out
+coverage.html

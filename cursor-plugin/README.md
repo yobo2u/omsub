@@ -11,7 +11,7 @@
 - CPA Manager Plus `v1.12.10`
 - Linux amd64
 - Cursor OAuth、动态模型发现、非流式、SSE 流式和错误路径
-- 插件自有 Cursor 管理页、受认证管理 API、模型禁用与本地估算用量
+- 插件自有 Cursor 管理页、受认证管理 API、模型禁用、官方本期用量与本地估算用量
 
 ## 安装
 
@@ -24,7 +24,7 @@
 当前商店发布物仅支持 Linux amd64：
 
 ```text
-cursor_0.5.10_linux_amd64.zip
+cursor_0.5.11_linux_amd64.zip
 checksums.txt
 ```
 
@@ -33,8 +33,8 @@ checksums.txt
 解压发布包，然后把 `--plugins-dir` 指向 CLIProxyAPI 配置中的 `plugins.dir`：
 
 ```sh
-tar -xzf cursor-plugin-0.5.10-linux-amd64.tar.gz
-cd cursor-plugin-0.5.10-linux-amd64
+tar -xzf cursor-plugin-0.5.11-linux-amd64.tar.gz
+cd cursor-plugin-0.5.11-linux-amd64
 sudo ./install.sh --plugins-dir /opt/cpa-manager-plus/cliproxyapi/plugins
 ```
 
@@ -58,8 +58,8 @@ plugins:
 
 - Cursor OAuth 账户状态和实时可用模型；
 - 每个账户的模型禁用选择器，以及“保存设置 / Save settings”和需确认保存的“全部禁用 / Disable all”操作；
-- 插件进程启动后的本地估算 Token 与请求计数；
-- 明确的订阅额度不可用状态。
+- 每个账户的 Cursor 官方本期用量（Cursor Models / Other Models 金额与百分比）；
+- 插件进程启动后的本地估算 Token 与请求计数。
 
 管理页完整支持中文和英文。首次打开时优先使用已保存的语言偏好，否则跟随浏览器语言，非中文环境默认英文；页面右上角可随时切换“中文 / English”。切换会同步更新静态文案、账户状态、用量指标、模型控制、操作提示、页面标题及无障碍语言标记。插件只保存语言偏好，管理密钥仍仅保留在当前页面内存中。
 
@@ -94,7 +94,7 @@ sudo ./uninstall.sh --plugins-dir /opt/cpa-manager-plus/cliproxyapi/plugins
 
 ## 能力与边界
 
-- v0.5.10 的修复和升级说明见[发布说明](docs/releases/v0.5.10.md)。原生 grep/read/shell 请求会收到完整的不可执行协议回复，由客户端已公开的工具完成实际操作；网关不会执行这些原生文件读取或命令。
+- v0.5.11 的用量读取说明见[发布说明](docs/releases/v0.5.11.md)。v0.5.10 的修复和升级说明见[发布说明](docs/releases/v0.5.10.md)。原生 grep/read/shell 请求会收到完整的不可执行协议回复，由客户端已公开的工具完成实际操作；网关不会执行这些原生文件读取或命令。
 - 工具结果续轮会明确标记已完成的结果，帮助 Agent 继续回答，避免重复前言或再次发出已完成的工具调用。已有 OpenCode 会话中保存的重复内容不会被自动修改。
 - 支持 OpenAI `chat-completions` 文本消息、非流式和 SSE 流式响应，并兼容 OpenCode 发送的 `max_tokens`、`stream_options` 等扩展字段。
 - 支持标准 function tools、`tool_choice`、多工具调用、assistant `tool_calls` 历史和 tool 结果续轮；工具目录通过 Cursor 原生 `mcp_tools` 注册，结果转换为 OpenAI 兼容 `tool_calls`。
@@ -107,7 +107,7 @@ sudo ./uninstall.sh --plugins-dir /opt/cpa-manager-plus/cliproxyapi/plugins
 - 会话检查点仅在插件进程内保存，并按账户、模型和会话严格隔离。仅追加式线性历史会尝试续传；分支、编辑、压缩、过期、重启或状态异常时会安全回退为完整重放；checkpoint 续传在尚未暴露文本、工具调用或工具结果时，如收到无输出的干净 EndStream、Connect `internal` / `failed_precondition` 错误或无有效进展的传输超时，会丢弃旧 checkpoint 并仅安全重试一次完整重放。
 - 检查点的上限为 15 分钟 TTL、64 条和 16 MiB；进程重启后不保留。原始检查点、凭据和管理密钥不会写入浏览器存储、宿主 metadata、日志或发布证据。
 - 暂不直接实现 Responses API 或 `/v1/images/generations`；图片生成仍是 `chat-completions` 内的 Cursor Agent 工具流程，CLIProxyAPI 可按其 executor 翻译能力把其他协议转换到插件声明的输入输出格式。
-- Cursor 没有公开、稳定的 OAuth 订阅剩余额度接口；管理页不会伪造百分比或余额。
+- 管理页使用 Cursor dashboard 会话读取本期官方用量：百分比直接显示 `autoPercentUsed` / `apiPercentUsed`，金额来自聚合用量事件。请求失败时显示不可用原因，不会伪造剩余额度。
 - 成功/失败请求来自 CLIProxyAPI 的 `request.complete` 终态回调；同一用户请求即使发生宿主重试，最多记录一次最终结果。近期请求 ID 通过两个独立的 15 分钟 Bloom 时间窗去重，固定占用 16 MiB；在单窗不超过 100 万个完成事件（约 1,111 次/秒）的设计负载内，双窗查询的理论误判概率低于 `6e-8`。误判会跳过一条本地终态样本，使计数少计并保留此前的最近结果。宿主自身的成功/失败值按“调度尝试”单独展示。
 - token usage 为每次 Cursor 插件执行的本地估算值（包括宿主重试触发的再次执行），不代表 Cursor 账单或订阅额度，进程重启后重新计数。
 - 当前发布包只提供 Linux amd64；其他平台需要对应平台的 CGO 工具链重新构建。
