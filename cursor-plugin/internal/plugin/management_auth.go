@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"cursorplugin/internal/cursorauth"
+	"cursorplugin/internal/cursorusage"
 )
 
 const quotaUnavailableReason = "Cursor does not publish a subscription remaining-quota API"
@@ -53,8 +54,30 @@ type cursorModelStatus struct {
 }
 
 type cursorQuotaStatus struct {
-	Status string `json:"status"`
-	Reason string `json:"reason"`
+	Status            string             `json:"status"`
+	Reason            string             `json:"reason,omitempty"`
+	MembershipType    string             `json:"membership_type,omitempty"`
+	BillingCycleStart *time.Time         `json:"billing_cycle_start,omitempty"`
+	BillingCycleEnd   *time.Time         `json:"billing_cycle_end,omitempty"`
+	DisplayMessage    string             `json:"display_message,omitempty"`
+	AutoModelMessage  string             `json:"auto_model_message,omitempty"`
+	NamedModelMessage string             `json:"named_model_message,omitempty"`
+	CursorModels      *cursorBucketUsage `json:"cursor_models,omitempty"`
+	OtherModels       *cursorBucketUsage `json:"other_models,omitempty"`
+	IncludedSpendUSD  float64            `json:"included_spend_usd,omitempty"`
+	BonusSpendUSD     float64            `json:"bonus_spend_usd,omitempty"`
+	TotalSpendUSD     float64            `json:"total_spend_usd,omitempty"`
+	OnDemandSpendUSD  float64            `json:"on_demand_spend_usd,omitempty"`
+	AutoPercentUsed   float64            `json:"auto_percent_used,omitempty"`
+	APIPercentUsed    float64            `json:"api_percent_used,omitempty"`
+	TotalPercentUsed  float64            `json:"total_percent_used,omitempty"`
+}
+
+type cursorBucketUsage struct {
+	UsedUSD           *float64 `json:"used_usd"`
+	UsagePercent      float64  `json:"usage_percent"`
+	EstimatedTotalUSD *float64 `json:"estimated_total_usd"`
+	GuaranteedUSD     *float64 `json:"guaranteed_usd,omitempty"`
 }
 
 type cursorAccountStatus struct {
@@ -200,7 +223,7 @@ func (handler *Handler) cursorAccountStatusWithCredential(ctx context.Context, f
 		Label:             file.Label,
 		Status:            cursorPluginStatus(file.Status, localUsage.LastOutcome),
 		HostRuntime:       cursorHostRuntime(file),
-		SubscriptionQuota: cursorQuotaStatus{Status: "unavailable", Reason: quotaUnavailableReason},
+		SubscriptionQuota: handler.cursorQuota(ctx, credential),
 		LocalUsage:        localUsage,
 		CheckpointMetrics: handler.usage.checkpoints.snapshot(metricKey),
 		Models:            items,
@@ -281,4 +304,55 @@ func (handler *Handler) updateDisabledModels(ctx context.Context, body []byte) (
 		"auth_index":      update.AuthIndex,
 		"disabled_models": disabled,
 	})
+}
+
+func (handler *Handler) cursorQuota(ctx context.Context, credential cursorauth.Credentials) cursorQuotaStatus {
+	if handler.usageAPI == nil {
+		return cursorQuotaStatus{Status: "unavailable", Reason: quotaUnavailableReason}
+	}
+	snapshot, err := handler.usageAPI.Fetch(ctx, credential.AccessToken, credential.DashboardAccountID())
+	if err != nil {
+		return cursorQuotaStatus{Status: "unavailable", Reason: err.Error()}
+	}
+	return quotaFromSnapshot(snapshot)
+}
+
+func quotaFromSnapshot(snapshot cursorusage.Snapshot) cursorQuotaStatus {
+	quota := cursorQuotaStatus{
+		Status:            "available",
+		MembershipType:    snapshot.MembershipType,
+		DisplayMessage:    snapshot.DisplayMessage,
+		AutoModelMessage:  snapshot.AutoModelMessage,
+		NamedModelMessage: snapshot.NamedModelMessage,
+		IncludedSpendUSD:  snapshot.IncludedSpendUSD,
+		BonusSpendUSD:     snapshot.BonusSpendUSD,
+		TotalSpendUSD:     snapshot.TotalSpendUSD,
+		OnDemandSpendUSD:  snapshot.OnDemandSpendUSD,
+		AutoPercentUsed:   snapshot.AutoPercentUsed,
+		APIPercentUsed:    snapshot.APIPercentUsed,
+		TotalPercentUsed:  snapshot.TotalPercentUsed,
+		CursorModels:      bucketStatus(snapshot.CursorModels),
+		OtherModels:       bucketStatus(snapshot.OtherModels),
+	}
+	if !snapshot.BillingCycleStart.IsZero() {
+		start := snapshot.BillingCycleStart
+		quota.BillingCycleStart = &start
+	}
+	if !snapshot.BillingCycleEnd.IsZero() {
+		end := snapshot.BillingCycleEnd
+		quota.BillingCycleEnd = &end
+	}
+	return quota
+}
+
+func bucketStatus(bucket cursorusage.Bucket) *cursorBucketUsage {
+	if bucket.UsedUSD == nil && bucket.GuaranteedUSD == nil && bucket.EstimatedTotalUSD == nil && bucket.UsagePercent == 0 {
+		return nil
+	}
+	return &cursorBucketUsage{
+		UsedUSD:           bucket.UsedUSD,
+		UsagePercent:      bucket.UsagePercent,
+		EstimatedTotalUSD: bucket.EstimatedTotalUSD,
+		GuaranteedUSD:     bucket.GuaranteedUSD,
+	}
 }

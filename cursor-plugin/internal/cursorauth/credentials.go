@@ -38,6 +38,13 @@ func credentialsFromTokens(accessToken, refreshToken string, now time.Time) (Cre
 	}, nil
 }
 
+func (credentials Credentials) DashboardAccountID() string {
+	if accountID := strings.TrimSpace(credentials.AccountID); accountID != "" {
+		return accountID
+	}
+	return parseSubject(parseJWTPayload(credentials.AccessToken).Subject)
+}
+
 func ParseCredentials(raw []byte) (Credentials, error) {
 	var credentials Credentials
 	if err := json.Unmarshal(raw, &credentials); err != nil {

@@ -10,11 +10,16 @@ import (
 	"cursorplugin/internal/cursorapi"
 	"cursorplugin/internal/cursorauth"
 	"cursorplugin/internal/cursorproto"
+	"cursorplugin/internal/cursorusage"
 )
 
 type CursorClient interface {
 	Run(context.Context, cursorapi.RunInput, func(cursorproto.ServerEvent) error) (cursorapi.RunResult, error)
 	DiscoverModels(context.Context, string) ([]string, error)
+}
+
+type UsageClient interface {
+	Fetch(context.Context, string, string) (cursorusage.Snapshot, error)
 }
 
 type StreamEmitter interface {
@@ -31,6 +36,7 @@ type Dependencies struct {
 	Cursor  CursorClient
 	Emitter StreamEmitter
 	Host    HostCaller
+	Usage   UsageClient
 }
 
 type envelope struct {
