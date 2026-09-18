@@ -207,6 +207,9 @@ func (state *streamState) handleFrame(
 		watchdogs.sawProgress()
 		if state.result.TTFT == 0 && event.Kind != cursorproto.EventDone {
 			state.result.TTFT = time.Since(state.started)
+			if state.result.TTFT <= 0 {
+				state.result.TTFT = time.Nanosecond
+			}
 		}
 	}
 	state.result.OutputExposed = state.result.OutputExposed || eventExposesOutput(event.Kind)
