@@ -29,10 +29,10 @@ func Test_Handler_Register_declares_cursor_auth_models_and_executor(t *testing.T
 	require.Contains(t, string(response.Result), `"executor":true`)
 	require.Contains(t, string(response.Result), `"management_api":true`)
 	require.Contains(t, string(response.Result), `"usage_plugin":false`)
-	require.Contains(t, string(response.Result), `"request_interceptor":true`)
+	require.Contains(t, string(response.Result), `"request_interceptor":false`)
 	require.Contains(t, string(response.Result), `"request_lifecycle_plugin":true`)
-	require.Contains(t, string(response.Result), `"Version":"0.6.1"`)
-	require.Contains(t, string(response.Result), `"GitHubRepository":"https://github.com/yobo2u/omsub"`)
+	require.Contains(t, string(response.Result), `"Version":"0.6.3"`)
+	require.Contains(t, string(response.Result), `"GitHubRepository":"https://github.com/giovannirco/omsub"`)
 }
 
 func Test_Handler_ManagementRegister_exposes_cursor_management_resource_and_authenticated_routes(t *testing.T) {

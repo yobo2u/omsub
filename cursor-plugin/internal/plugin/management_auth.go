@@ -8,10 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"cursorplugin/internal/cursorapi"
 	"cursorplugin/internal/cursorauth"
 )
 
-const quotaUnavailableReason = "Cursor does not publish a subscription remaining-quota API"
+const quotaClientMissingReason = "Cursor usage client is not configured"
 
 type hostAuthFile struct {
 	ID            string `json:"id"`
@@ -52,9 +53,32 @@ type cursorModelStatus struct {
 	Disabled bool   `json:"disabled"`
 }
 
+type periodUsageClient interface {
+	CurrentPeriodUsage(context.Context, string) (cursorapi.PeriodUsage, error)
+}
+
 type cursorQuotaStatus struct {
-	Status string `json:"status"`
-	Reason string `json:"reason"`
+	Status              string   `json:"status"`
+	Reason              string   `json:"reason,omitempty"`
+	PlanName            string   `json:"plan_name,omitempty"`
+	Price               string   `json:"price,omitempty"`
+	DisplayMessage      string   `json:"display_message,omitempty"`
+	AutoDisplayMessage  string   `json:"auto_display_message,omitempty"`
+	APIDisplayMessage   string   `json:"api_display_message,omitempty"`
+	IncludedPercentUsed *float64 `json:"included_percent_used,omitempty"`
+	AutoPercentUsed     *float64 `json:"auto_percent_used,omitempty"`
+	APIPercentUsed      *float64 `json:"api_percent_used,omitempty"`
+	IncludedSpendCents  *int64   `json:"included_spend_cents,omitempty"`
+	IncludedLimitCents  *int64   `json:"included_limit_cents,omitempty"`
+	CycleStartAt        string   `json:"cycle_start_at,omitempty"`
+	ResetsAt            string   `json:"resets_at,omitempty"`
+	GrokBotLabel        string   `json:"grok_bot_label,omitempty"`
+	GrokBotPercentUsed  *float64 `json:"grok_bot_percent_used,omitempty"`
+	GrokBotCycleStartAt string   `json:"grok_bot_cycle_start_at,omitempty"`
+	GrokBotResetsAt     string   `json:"grok_bot_resets_at,omitempty"`
+	OnDemandKind        string   `json:"on_demand_kind,omitempty"`
+	OnDemandUsedCents   *int64   `json:"on_demand_used_cents,omitempty"`
+	OnDemandLimitCents  *int64   `json:"on_demand_limit_cents,omitempty"`
 }
 
 type cursorAccountStatus struct {
@@ -151,7 +175,7 @@ func (handler *Handler) managementStatus(ctx context.Context) (managementRespons
 				Label:             record.file.Label,
 				Status:            "unavailable: " + accountErr.Error(),
 				HostRuntime:       cursorHostRuntime(record.file),
-				SubscriptionQuota: cursorQuotaStatus{Status: "unavailable", Reason: quotaUnavailableReason},
+				SubscriptionQuota: cursorQuotaStatus{Status: "unavailable", Reason: quotaClientMissingReason},
 				LocalUsage:        handler.usage.snapshot(metricKey),
 				CheckpointMetrics: handler.usage.checkpoints.snapshot(metricKey),
 				Models:            []cursorModelStatus{},
@@ -200,11 +224,67 @@ func (handler *Handler) cursorAccountStatusWithCredential(ctx context.Context, f
 		Label:             file.Label,
 		Status:            cursorPluginStatus(file.Status, localUsage.LastOutcome),
 		HostRuntime:       cursorHostRuntime(file),
-		SubscriptionQuota: cursorQuotaStatus{Status: "unavailable", Reason: quotaUnavailableReason},
+		SubscriptionQuota: handler.subscriptionQuota(ctx, credential.AccessToken),
 		LocalUsage:        localUsage,
 		CheckpointMetrics: handler.usage.checkpoints.snapshot(metricKey),
 		Models:            items,
 	}, nil
+}
+
+func (handler *Handler) subscriptionQuota(ctx context.Context, accessToken string) cursorQuotaStatus {
+	reader, ok := handler.cursor.(periodUsageClient)
+	if !ok {
+		return cursorQuotaStatus{Status: "unavailable", Reason: quotaClientMissingReason}
+	}
+	usage, err := reader.CurrentPeriodUsage(ctx, accessToken)
+	if err != nil {
+		return cursorQuotaStatus{Status: "unavailable", Reason: err.Error()}
+	}
+	included := usage.IncludedPercentUsed
+	autoPercent := usage.AutoPercentUsed
+	apiPercent := usage.APIPercentUsed
+	usedCents := usage.OnDemandUsedCents
+	status := cursorQuotaStatus{
+		Status:              "available",
+		PlanName:            usage.PlanName,
+		Price:               usage.Price,
+		DisplayMessage:      usage.DisplayMessage,
+		AutoDisplayMessage:  usage.AutoDisplayMessage,
+		APIDisplayMessage:   usage.APIDisplayMessage,
+		IncludedPercentUsed: &included,
+		AutoPercentUsed:     &autoPercent,
+		APIPercentUsed:      &apiPercent,
+		OnDemandKind:        usage.OnDemandKind,
+		OnDemandUsedCents:   &usedCents,
+	}
+	if usage.HasIncludedSpend {
+		spend := usage.IncludedSpendCents
+		limit := usage.IncludedLimitCents
+		status.IncludedSpendCents = &spend
+		status.IncludedLimitCents = &limit
+	}
+	if !usage.BillingCycleStart.IsZero() {
+		status.CycleStartAt = usage.BillingCycleStart.UTC().Format(time.RFC3339)
+	}
+	if !usage.BillingCycleEnd.IsZero() {
+		status.ResetsAt = usage.BillingCycleEnd.UTC().Format(time.RFC3339)
+	}
+	status.GrokBotLabel = usage.GrokBotLabel
+	if usage.HasGrokBotPercent {
+		percent := usage.GrokBotPercentUsed
+		status.GrokBotPercentUsed = &percent
+	}
+	if !usage.GrokBotPeriodStart.IsZero() {
+		status.GrokBotCycleStartAt = usage.GrokBotPeriodStart.UTC().Format(time.RFC3339Nano)
+	}
+	if !usage.GrokBotResetsAt.IsZero() {
+		status.GrokBotResetsAt = usage.GrokBotResetsAt.UTC().Format(time.RFC3339Nano)
+	}
+	if usage.HasOnDemandLimit {
+		limitCents := usage.OnDemandLimitCents
+		status.OnDemandLimitCents = &limitCents
+	}
+	return status
 }
 
 func cursorMetricKey(file hostAuthFile) string {
