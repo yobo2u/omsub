@@ -42,6 +42,7 @@ func (handler *Handler) parseAuth(raw []byte) (any, error) {
 	if request.FileName != "" {
 		auth.FileName = request.FileName
 	}
+	auth.ID = ""
 	return struct {
 		Handled bool     `json:"Handled"`
 		Auth    authData `json:"Auth"`
@@ -101,6 +102,8 @@ func (handler *Handler) refreshAuth(ctx context.Context, raw []byte) (any, error
 	if err != nil {
 		return nil, err
 	}
+	auth.ID = ""
+	auth.FileName = ""
 	return struct {
 		Auth             authData  `json:"Auth"`
 		NextRefreshAfter time.Time `json:"NextRefreshAfter"`
@@ -120,7 +123,7 @@ func buildAuthData(credentials cursorauth.Credentials) (authData, error) {
 		return authData{}, errors.New("Cursor account identity is unavailable")
 	}
 	digest := sha256.Sum256([]byte(identity))
-	id := "cursor-" + hex.EncodeToString(digest[:8])
+	id := "cursor-" + hex.EncodeToString(digest[:8]) + ".json"
 	label := credentials.Email
 	if label == "" {
 		label = "Cursor account"
@@ -128,7 +131,7 @@ func buildAuthData(credentials cursorauth.Credentials) (authData, error) {
 	return authData{
 		Provider:         "cursor",
 		ID:               id,
-		FileName:         id + ".json",
+		FileName:         id,
 		Label:            label,
 		StorageJSON:      storage,
 		Metadata:         map[string]string{"type": "cursor", "email": credentials.Email},
