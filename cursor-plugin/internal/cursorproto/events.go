@@ -1,13 +1,8 @@
 package cursorproto
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"mime"
-	"net/http"
-	"path/filepath"
-	"strings"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -39,6 +34,7 @@ type ServerEvent struct {
 	ImageData  []byte
 	Path       string
 	Checkpoint []byte
+	Query      *QueryShape
 }
 
 func DecodeServerEvent(raw []byte) (ServerEvent, error) {
@@ -66,11 +62,12 @@ func DecodeServerEvent(raw []byte) (ServerEvent, error) {
 	}
 	if active.Name() == "interaction_query" {
 		query := server.Get(active).Message()
+		shape := queryShape(query)
 		selected := query.WhichOneof(query.Descriptor().Oneofs().ByName("query"))
 		if selected == nil {
-			return ServerEvent{Kind: EventIgnored, Type: "interaction_query"}, nil
+			return ServerEvent{Kind: EventIgnored, Type: "interaction_query", Query: &shape}, nil
 		}
-		return ServerEvent{Kind: EventIgnored, Type: "interaction_query." + string(selected.Name())}, nil
+		return ServerEvent{Kind: EventIgnored, Type: "interaction_query." + string(selected.Name()), Query: &shape}, nil
 	}
 	if active.Name() != "interaction_update" {
 		return ServerEvent{Kind: EventIgnored, Type: string(active.Name())}, nil
@@ -216,87 +213,6 @@ func completedToolCallEvent(completed protoreflect.Message) (ServerEvent, error)
 	return ServerEvent{Kind: EventToolCall, Type: "tool_call_completed", ID: callID, Name: name, Arguments: arguments}, nil
 }
 
-func completedImageToolCallEvent(completed, imageCall protoreflect.Message) (ServerEvent, error) {
-	callIDField, err := requireField(completed, "call_id")
-	if err != nil {
-		return ServerEvent{}, err
-	}
-	callID := completed.Get(callIDField).String()
-	if callID == "" {
-		return ServerEvent{}, fmt.Errorf("Cursor completed image generation requires a call id")
-	}
-	resultField, err := requireField(imageCall, "result")
-	if err != nil {
-		return ServerEvent{}, err
-	}
-	if !imageCall.Has(resultField) {
-		return ServerEvent{}, fmt.Errorf("Cursor image generation %q completed without a result", callID)
-	}
-	result := imageCall.Get(resultField).Message()
-	active := result.WhichOneof(result.Descriptor().Oneofs().ByName("result"))
-	if active == nil {
-		return ServerEvent{}, fmt.Errorf("Cursor image generation %q returned an empty result", callID)
-	}
-	if active.Name() == "error" {
-		failure := result.Get(active).Message()
-		errorField, fieldErr := requireField(failure, "error")
-		if fieldErr != nil {
-			return ServerEvent{}, fieldErr
-		}
-		message := strings.TrimSpace(failure.Get(errorField).String())
-		if message == "" {
-			message = "unknown upstream error"
-		}
-		return ServerEvent{}, fmt.Errorf("Cursor image generation failed: %s", message)
-	}
-	if active.Name() != "success" {
-		return ServerEvent{}, fmt.Errorf("Cursor image generation %q returned unsupported result %q", callID, active.Name())
-	}
-	success := result.Get(active).Message()
-	dataField, err := requireField(success, "image_data")
-	if err != nil {
-		return ServerEvent{}, err
-	}
-	encoded := strings.TrimSpace(success.Get(dataField).String())
-	if encoded == "" {
-		return ServerEvent{}, fmt.Errorf("Cursor image generation %q returned no image data", callID)
-	}
-	data, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		return ServerEvent{}, fmt.Errorf("decode Cursor generated image %q: %w", callID, err)
-	}
-	pathField, err := requireField(success, "file_path")
-	if err != nil {
-		return ServerEvent{}, err
-	}
-	path := success.Get(pathField).String()
-	mimeType := generatedImageMIME(data, path)
-	if !strings.HasPrefix(mimeType, "image/") {
-		return ServerEvent{}, fmt.Errorf("Cursor image generation %q returned non-image data (%s)", callID, mimeType)
-	}
-	return ServerEvent{
-		Kind: EventImage, Type: "tool_call_completed.generate_image_tool_call", ID: callID,
-		MIMEType: mimeType, ImageData: data, Path: path,
-	}, nil
-}
-
-func generatedImageMIME(data []byte, path string) string {
-	detected := http.DetectContentType(data)
-	if detected != "application/octet-stream" {
-		if mediaType, _, err := mime.ParseMediaType(detected); err == nil {
-			return mediaType
-		}
-		return detected
-	}
-	if extensionType := mime.TypeByExtension(strings.ToLower(filepath.Ext(path))); extensionType != "" {
-		if mediaType, _, err := mime.ParseMediaType(extensionType); err == nil {
-			return mediaType
-		}
-		return extensionType
-	}
-	return detected
-}
-
 func decodeToolArguments(args protoreflect.Message) (string, error) {
 	descriptor, err := requireField(args, "args")
 	if err != nil {
@@ -339,31 +255,4 @@ func stringEvent(kind EventKind, message protoreflect.Message) (ServerEvent, err
 		return ServerEvent{}, err
 	}
 	return ServerEvent{Kind: kind, Type: string(message.Descriptor().Name()), Text: message.Get(descriptor).String()}, nil
-}
-
-func DecodeModels(raw []byte) ([]string, error) {
-	response, err := newMessage("GetUsableModelsResponse")
-	if err != nil {
-		return nil, err
-	}
-	if err := proto.Unmarshal(raw, response); err != nil {
-		return nil, fmt.Errorf("decode Cursor models response: %w", err)
-	}
-	modelsField, err := requireField(response, "models")
-	if err != nil {
-		return nil, err
-	}
-	models := response.Get(modelsField).List()
-	ids := make([]string, 0, models.Len())
-	for index := range models.Len() {
-		model := models.Get(index).Message()
-		idField, err := requireField(model, "model_id")
-		if err != nil {
-			return nil, err
-		}
-		if id := model.Get(idField).String(); id != "" {
-			ids = append(ids, id)
-		}
-	}
-	return ids, nil
 }

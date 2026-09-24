@@ -5,17 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sort"
-	"strings"
 	"time"
 
 	"cursorplugin/internal/cursorproto"
 )
-
-type bodyRead struct {
-	data []byte
-	err  error
-}
 
 const connectEndStreamFlag byte = 0x02
 
@@ -27,6 +20,7 @@ type streamState struct {
 	doneSent    bool
 	drain       *time.Timer
 	eventCounts map[string]int
+	queries     queryDiagnostic
 }
 
 func readRunStream(
@@ -63,7 +57,7 @@ func readRunStream(
 				watchdogs.sawFrame()
 				finished, err := state.handleFrame(ctx, frame, emit, blobs, imageWrites, environment, outbound, watchdogs, drainDelay)
 				if err != nil || finished {
-					return state.result, err
+					return state.result, state.annotateProgressTimeout(err)
 				}
 			}
 		}
@@ -74,7 +68,7 @@ func readRunStream(
 			return state.result, errors.New("Cursor stream closed before turn end")
 		}
 		if read.err != nil {
-			return state.result, runCause(ctx, fmt.Errorf("read Cursor stream: %w", read.err))
+			return state.result, state.annotateProgressTimeout(runCause(ctx, fmt.Errorf("read Cursor stream: %w", read.err)))
 		}
 	}
 }
@@ -146,11 +140,12 @@ func (state *streamState) handleFrame(
 			return false, context.Cause(ctx)
 		}
 	}
-	reply, handled, err = cursorproto.ApproveGenerateImageRequest(frame.Payload)
+	reply, handled, err = cursorproto.ReplyInteractionQuery(frame.Payload)
 	if err != nil {
 		return false, err
 	}
 	if handled {
+		state.result.InteractionResponded = true
 		select {
 		case outbound <- reply:
 			watchdogs.sawProgress()
@@ -189,6 +184,7 @@ func (state *streamState) handleFrame(
 		return false, err
 	}
 	state.recordEvent(event)
+	state.queries.record(event, time.Since(state.started))
 	if event.Kind == cursorproto.EventCheckpoint {
 		state.result.Checkpoint = append(state.result.Checkpoint[:0], event.Checkpoint...)
 		return state.terminal, nil
@@ -222,90 +218,4 @@ func (state *streamState) handleFrame(
 		state.drain = time.NewTimer(drainDelay)
 	}
 	return false, nil
-}
-
-func (state *streamState) recordEvent(event cursorproto.ServerEvent) {
-	eventType := event.Type
-	if eventType == "" {
-		eventType = string(event.Kind)
-	}
-	if state.eventCounts == nil {
-		state.eventCounts = make(map[string]int)
-	}
-	state.eventCounts[eventType]++
-}
-
-func (state *streamState) annotateProgressTimeout(err error) error {
-	if !errors.Is(err, ErrProgressTimeout) || len(state.eventCounts) == 0 {
-		return err
-	}
-	types := make([]string, 0, len(state.eventCounts))
-	for eventType := range state.eventCounts {
-		types = append(types, eventType)
-	}
-	sort.Strings(types)
-	counts := make([]string, 0, len(types))
-	for _, eventType := range types {
-		counts = append(counts, fmt.Sprintf("%s=%d", eventType, state.eventCounts[eventType]))
-	}
-	return fmt.Errorf("%w (Cursor event counts: %s)", err, strings.Join(counts, ", "))
-}
-
-func eventMakesProgress(kind cursorproto.EventKind) bool {
-	switch kind {
-	case cursorproto.EventText, cursorproto.EventThinking, cursorproto.EventTokens, cursorproto.EventToolCall, cursorproto.EventImage, cursorproto.EventDone:
-		return true
-	case cursorproto.EventIgnored, cursorproto.EventCheckpoint:
-		return false
-	default:
-		return false
-	}
-}
-
-func eventExposesOutput(kind cursorproto.EventKind) bool {
-	switch kind {
-	case cursorproto.EventText, cursorproto.EventThinking, cursorproto.EventTokens, cursorproto.EventImage, cursorproto.EventDone:
-		return true
-	case cursorproto.EventIgnored, cursorproto.EventToolCall, cursorproto.EventCheckpoint:
-		return false
-	default:
-		return false
-	}
-}
-
-func startBodyReader(body io.Reader) <-chan bodyRead {
-	result := make(chan bodyRead, 1)
-	go func() {
-		defer close(result)
-		for {
-			buffer := make([]byte, 32<<10)
-			count, err := body.Read(buffer)
-			result <- bodyRead{data: append([]byte(nil), buffer[:count]...), err: err}
-			if err != nil {
-				return
-			}
-		}
-	}()
-	return result
-}
-
-func stopBodyReader(body io.Closer, reads <-chan bodyRead) {
-	_ = body.Close()
-	for range reads {
-	}
-}
-
-func nextBodyRead(ctx context.Context, reads <-chan bodyRead, drain *time.Timer) (bodyRead, bool, error) {
-	var drainChannel <-chan time.Time
-	if drain != nil {
-		drainChannel = drain.C
-	}
-	select {
-	case read := <-reads:
-		return read, false, nil
-	case <-drainChannel:
-		return bodyRead{}, true, nil
-	case <-ctx.Done():
-		return bodyRead{}, false, context.Cause(ctx)
-	}
 }

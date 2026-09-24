@@ -26,11 +26,12 @@ type RunInput struct {
 }
 
 type RunResult struct {
-	ConversationID string
-	Checkpoint     []byte
-	OutputExposed  bool
-	ToolExposed    bool
-	TTFT           time.Duration
+	ConversationID       string
+	Checkpoint           []byte
+	OutputExposed        bool
+	ToolExposed          bool
+	InteractionResponded bool
+	TTFT                 time.Duration
 }
 
 func (client *Client) Run(
@@ -48,6 +49,7 @@ func (client *Client) Run(
 	result := RunResult{ConversationID: conversationID}
 	environment := cursorproto.RequestEnvironment{
 		TimeZone: "UTC", WorkspacePaths: []string{client.workspacePath}, ProjectFolder: client.projectFolder,
+		Tools: input.Tools,
 	}
 	runPayload, err := cursorproto.EncodeRunRequest(cursorproto.RunRequest{
 		ConversationID: conversationID,

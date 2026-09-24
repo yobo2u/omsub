@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -16,10 +17,30 @@ import (
 //go:embed agent.desc
 var agentDescriptor []byte
 
+//go:embed mcp_state.textproto
+var mcpStateDescriptor []byte
+
 var loadAgentFile = sync.OnceValues(func() (protoreflect.FileDescriptor, error) {
 	var fileProto descriptorpb.FileDescriptorProto
 	if err := proto.Unmarshal(agentDescriptor, &fileProto); err != nil {
 		return nil, fmt.Errorf("decode Cursor descriptor: %w", err)
+	}
+	var additions descriptorpb.FileDescriptorProto
+	if err := prototext.Unmarshal(mcpStateDescriptor, &additions); err != nil {
+		return nil, fmt.Errorf("decode Cursor MCP state contract: %w", err)
+	}
+	for _, addition := range additions.MessageType {
+		merged := false
+		for _, existing := range fileProto.MessageType {
+			if existing.GetName() == addition.GetName() {
+				existing.Field = append(existing.Field, addition.Field...)
+				merged = true
+				break
+			}
+		}
+		if !merged {
+			fileProto.MessageType = append(fileProto.MessageType, addition)
+		}
 	}
 	file, err := protodesc.NewFile(&fileProto, new(protoregistry.Files))
 	if err != nil {

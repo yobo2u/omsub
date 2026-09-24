@@ -35,6 +35,7 @@ type RequestEnvironment struct {
 	TimeZone       string
 	WorkspacePaths []string
 	ProjectFolder  string
+	Tools          []ToolDefinition
 }
 
 func EncodeRunRequest(request RunRequest) ([]byte, error) {

@@ -145,6 +145,7 @@ func shouldRetryFresh(
 ) bool {
 	retryable := cursorapi.IsReplayableCheckpointError(err)
 	return input.Mode == cursorproto.CheckpointSuffix && retryable &&
+		!result.InteractionResponded &&
 		!result.OutputExposed && !result.ToolExposed && observation.text.Len() == 0 && !observation.toolCall && !observation.image && !hasToolResult
 }
 

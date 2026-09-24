@@ -20,7 +20,15 @@ func ReplyRequestContext(raw []byte, environment RequestEnvironment) ([]byte, bo
 	}
 	execMessage := server.Get(active).Message()
 	operation := execMessage.WhichOneof(execMessage.Descriptor().Oneofs().ByName("message"))
-	if operation == nil || operation.Name() != "request_context_args" {
+	if operation == nil {
+		return nil, false, nil
+	}
+	switch operation.Name() {
+	case "mcp_state_exec_args":
+		reply, err := replyMCPState(execMessage, environment.Tools)
+		return reply, true, err
+	case "request_context_args":
+	default:
 		return nil, false, nil
 	}
 
