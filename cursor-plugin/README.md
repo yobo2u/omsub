@@ -7,7 +7,7 @@
 
 ## 当前源码版本
 
-当前源码版本为 **0.6.1**，变更见[版本说明](docs/releases/v0.6.1.md)。更新源码或打包版本不会自动发布 GitHub Release、升级已运行插件或启用账户策略。以下 0.6.1 包名用于本地构建或对应 Release 发布后的安装；已发布版本下载入口见[仓库首页](https://github.com/yobo2u/omsub/tree/cursor)。
+当前源码版本为 **0.6.2**，变更见[版本说明](docs/releases/v0.6.2.md)。更新源码或打包版本不会自动发布 GitHub Release、升级已运行插件或启用账户策略。以下 0.6.2 包名用于本地构建或对应 Release 发布后的安装；已发布版本下载入口见[仓库首页](https://github.com/yobo2u/omsub/tree/cursor)。
 
 ## 已验证宿主环境
 
@@ -25,10 +25,10 @@
 `cursor` 安装。商店会从最新的 `v<version>` GitHub Release 下载当前平台 ZIP，
 并用同一 Release 中的 `checksums.txt` 校验文件。
 
-0.6.1 商店格式包仅面向 Linux amd64：
+0.6.2 商店格式包仅面向 Linux amd64：
 
 ```text
-cursor_0.6.1_linux_amd64.zip
+cursor_0.6.2_linux_amd64.zip
 checksums.txt
 ```
 
@@ -37,8 +37,8 @@ checksums.txt
 解压发布包，然后把 `--plugins-dir` 指向 CLIProxyAPI 配置中的 `plugins.dir`：
 
 ```sh
-tar -xzf cursor-plugin-0.6.1-linux-amd64.tar.gz
-cd cursor-plugin-0.6.1-linux-amd64
+tar -xzf cursor-plugin-0.6.2-linux-amd64.tar.gz
+cd cursor-plugin-0.6.2-linux-amd64
 sudo ./install.sh --plugins-dir /opt/cpa-manager-plus/cliproxyapi/plugins
 ```
 
@@ -70,6 +70,8 @@ plugins:
 模型禁用规则保存在对应 Cursor OAuth 认证 JSON 的 `disabled_models` 字段中。插件会同时在模型发现和请求执行阶段应用规则，刷新 OAuth token 时也会保留规则。
 
 账户列表只显示仍有物理文件的 Cursor OAuth 凭据，不显示 CLIProxyAPI 的 `runtime_only` 投影或文件删除后短暂残留的 `source: memory` 运行时记录；如果旧数据中多个条目解析到同一个 Cursor `account_id` 或邮箱，也只显示一个逻辑账户。
+
+文件加载时，运行时账号 ID 由宿主按实际凭据路径生成；新 OAuth 登录使用包含 `.json` 的文件名作为 ID，令牌刷新沿用宿主已有 ID 和文件名。这避免保存模型设置时 `host.auth.save` 为同一文件另建账号。升级此身份修复后需重启 CLIProxyAPI，以清除旧进程残留的重复记录；不要通过删除账号来清理共用同一文件的条目。
 
 插件浏览器资源按 CLIProxyAPI 设计是未认证的静态入口，因此页面不会直接暴露账户数据；读取状态或保存规则时需要输入 CLIProxyAPI 管理密钥。密钥只保留在当前页面内存中，不写入浏览器存储。
 
@@ -103,13 +105,15 @@ sudo ./uninstall.sh --plugins-dir /opt/cpa-manager-plus/cliproxyapi/plugins
 - 工具结果续轮会明确标记已完成的结果，帮助 Agent 继续回答，避免重复前言或再次发出已完成的工具调用。已有 OpenCode 会话中保存的重复内容不会被自动修改。
 - 支持 OpenAI `chat-completions` 文本消息、非流式和 SSE 流式响应，并兼容 OpenCode 发送的 `max_tokens`、`stream_options` 等扩展字段。
 - 支持标准 function tools、`tool_choice`、多工具调用、assistant `tool_calls` 历史和 tool 结果续轮；工具目录通过 Cursor 原生 `mcp_tools` 注册，结果转换为 OpenAI 兼容 `tool_calls`。
+- 支持 Cursor 在工具调用前重新查询 MCP 工具目录：仅返回当前请求已提供的工具定义和参数 schema，不启动 MCP 服务、不读取网关文件，也不代替客户端执行工具。
 - 支持 `image_url` / `input_image` 内联 data URL，以及 `file` / `input_file` 的图片或 UTF-8 文本附件；图片和文件通过 Cursor 原生 `selected_context` 发送，tool 结果中的图片也能随续轮送达。
 - 支持 Cursor Agent 内置图片生成工具：无头调用按 Cursor CLI 行为自动批准生成请求，成功结果以 CLIProxyAPI 兼容的 `message.images` / `delta.images` 内联 data URL 返回；模型元数据声明文本和图片输入输出能力。上游证据、协议与验收边界见[图片能力说明](docs/cursor-image-capabilities.md)。
 - `message.images` / `delta.images` 是 CLIProxyAPI 的 Chat Completions 扩展而不是 OpenAI 标准字段；调用方必须显式解析它。当前 OpenBitFun/BitFun 的 OpenAI 流适配器会忽略该字段，因此插件能返回图片不等于现有 BitFun UI 已能显示图片，客户端仍需单独适配。
 - 为避免服务端请求伪造，远程图片 URL 不由插件下载；调用方应传内联 data URL。仅有 `file_id` 而没有 `file_data` 的附件无法由独立插件解析。
 - v0.5.9 会在 OpenAI 兼容输出边界规范化 Cursor 工具调用 ID：保持调用与结果引用一致，禁止控制字符，最大 64 字节，并在规范化冲突时生成稳定无碰撞 ID；已有合法 ID 不会被改写。
 - 真正为空且不含工具调用的 assistant 历史会被过滤，成功但没有文本、图片或工具调用的 Cursor 响应会明确失败；合法的 image-only 和 tool-only assistant 响应保持不变。
-- 会话检查点仅在插件进程内保存，并按账户、模型和会话严格隔离。仅追加式线性历史会尝试续传；分支、编辑、压缩、过期、重启或状态异常时会安全回退为完整重放；checkpoint 续传在尚未暴露文本、工具调用或工具结果时，如收到无输出的干净 EndStream、Connect `internal` / `failed_precondition` 错误或无有效进展的传输超时，会丢弃旧 checkpoint 并仅安全重试一次完整重放。
+- 会话检查点仅在插件进程内保存，并按账户、模型和会话严格隔离。仅追加式线性历史会尝试续传；分支、编辑、压缩、过期、重启或状态异常时会安全回退为完整重放；checkpoint 续传在尚未暴露文本、工具调用、工具结果且未回应交互请求时，如收到无输出的干净 EndStream、Connect `internal` / `failed_precondition` 错误或无有效进展的传输超时，会丢弃旧 checkpoint 并仅安全重试一次完整重放。
+- 无交互 UI 的代理不能代替用户批准 Cursor 原生联网、模式切换或提问。Web Search、Exa Search/Fetch、Switch Mode、Ask Question 会收到带原始关联 ID 的明确拒绝，Create Plan 会收到协议错误结果，避免上游一直等待未应答的请求；可用客户端提供的工具完成相应操作。VM Setup 没有拒绝分支，直接返回不支持错误，不伪造成功。原有图片生成行为不变，未知协议字段保留有界诊断和超时保护。
 - 检查点的上限为 15 分钟 TTL、64 条和 16 MiB；进程重启后不保留。原始检查点、凭据和管理密钥不会写入浏览器存储、宿主 metadata、日志或发布证据。
 - 暂不直接实现 Responses API 或 `/v1/images/generations`；图片生成仍是 `chat-completions` 内的 Cursor Agent 工具流程，CLIProxyAPI 可按其 executor 翻译能力把其他协议转换到插件声明的输入输出格式。
 - Cursor 没有公开、稳定的 OAuth 订阅剩余额度接口；管理页不会伪造百分比或余额。
