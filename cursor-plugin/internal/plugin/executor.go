@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -20,13 +21,14 @@ func (handler *Handler) execute(ctx context.Context, raw []byte) (any, error) {
 		return nil, err
 	}
 	turn := openai.NewTurn("cursor/" + chat.Model)
+	inputText := usageText(chat)
 	defer func() {
-		handler.usage.recordTokens(request.AuthID, turn.EstimatedUsage(usageText(chat)))
+		handler.usage.recordTokens(request.AuthID, turn.EstimatedUsage(inputText))
 	}()
 	if handler.cursor == nil {
 		return nil, errors.New("Cursor client is unavailable")
 	}
-	_, err = handler.runCheckpointed(ctx, request, chat, credentials, func(event cursorproto.ServerEvent) error {
+	result, err := handler.runCheckpointed(ctx, request, chat, credentials, func(event cursorproto.ServerEvent) error {
 		switch event.Kind {
 		case cursorproto.EventText:
 			turn.AddText(event.Text)
@@ -38,9 +40,9 @@ func (handler *Handler) execute(ctx context.Context, raw []byte) (any, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, withExecutionResult(err, result)
 	}
-	payload, err := turn.Completion(usageText(chat))
+	payload, err := turn.Completion(inputText)
 	if err != nil {
 		return nil, err
 	}
@@ -69,11 +71,11 @@ func (handler *Handler) runStream(parent context.Context, request executorReques
 	turn := openai.NewTurn("cursor/" + chat.Model)
 	done := false
 	toolCallSeen := false
-	var runErr error
+	inputText := usageText(chat)
 	defer func() {
-		handler.usage.recordTokens(request.AuthID, turn.EstimatedUsage(usageText(chat)))
+		handler.usage.recordTokens(request.AuthID, turn.EstimatedUsage(inputText))
 	}()
-	_, runErr = handler.runCheckpointed(ctx, request, chat, credentials, func(event cursorproto.ServerEvent) error {
+	result, runErr := handler.runCheckpointed(ctx, request, chat, credentials, func(event cursorproto.ServerEvent) error {
 		switch event.Kind {
 		case cursorproto.EventText:
 			chunk, err := turn.StreamChunk(event.Text)
@@ -89,7 +91,7 @@ func (handler *Handler) runStream(parent context.Context, request executorReques
 			return handler.emitter.Emit(ctx, request.StreamID, chunk)
 		case cursorproto.EventDone:
 			done = true
-			chunk, err := turn.FinalChunk(usageText(chat))
+			chunk, err := turn.FinalChunk(inputText)
 			if err != nil {
 				return err
 			}
@@ -114,7 +116,7 @@ func (handler *Handler) runStream(parent context.Context, request executorReques
 		}
 	})
 	if runErr == nil && toolCallSeen && !done {
-		chunk, err := turn.FinalChunk(usageText(chat))
+		chunk, err := turn.FinalChunk(inputText)
 		if err != nil {
 			runErr = err
 		} else if err = handler.emitter.Emit(ctx, request.StreamID, chunk); err != nil {
@@ -128,7 +130,7 @@ func (handler *Handler) runStream(parent context.Context, request executorReques
 	if runErr == nil && !done {
 		runErr = errors.New("Cursor stream completed without turn end")
 	}
-	if closeErr := handler.emitter.Close(request.StreamID, runErr); closeErr != nil {
+	if closeErr := handler.emitter.Close(request.StreamID, withExecutionResult(runErr, result)); closeErr != nil {
 		return
 	}
 }
@@ -158,14 +160,26 @@ func cursorAttachments(attachments []openai.Attachment) []cursorproto.FileAttach
 }
 
 func usageText(chat openai.ChatRequest) string {
-	text := chat.System + chat.Prompt
+	size := len(chat.System) + len(chat.Prompt)
 	for _, attachment := range chat.Attachments {
-		text += attachment.Content
+		size += len(attachment.Content)
 	}
 	for _, tool := range chat.Tools {
-		text += tool.Name + tool.Description + string(tool.Parameters)
+		size += len(tool.Name) + len(tool.Description) + len(tool.Parameters)
 	}
-	return text
+	var text strings.Builder
+	text.Grow(size)
+	text.WriteString(chat.System)
+	text.WriteString(chat.Prompt)
+	for _, attachment := range chat.Attachments {
+		text.WriteString(attachment.Content)
+	}
+	for _, tool := range chat.Tools {
+		text.WriteString(tool.Name)
+		text.WriteString(tool.Description)
+		text.Write(tool.Parameters)
+	}
+	return text.String()
 }
 
 func decodeExecution(raw []byte) (executorRequest, openai.ChatRequest, cursorauth.Credentials, error) {

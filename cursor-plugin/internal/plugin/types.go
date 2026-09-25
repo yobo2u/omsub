@@ -40,10 +40,14 @@ type envelope struct {
 }
 
 type envelopeError struct {
-	Code       string `json:"code"`
-	Message    string `json:"message"`
-	Retryable  bool   `json:"retryable,omitempty"`
-	HTTPStatus int    `json:"http_status,omitempty"`
+	Code                 string `json:"code"`
+	Message              string `json:"message"`
+	Retryable            bool   `json:"retryable,omitempty"`
+	HTTPStatus           int    `json:"http_status,omitempty"`
+	RequestScoped        bool   `json:"request_scoped,omitempty"`
+	OutputExposed        bool   `json:"output_exposed,omitempty"`
+	ToolExposed          bool   `json:"tool_exposed,omitempty"`
+	InteractionResponded bool   `json:"interaction_responded,omitempty"`
 }
 
 type authData struct {

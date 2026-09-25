@@ -134,13 +134,7 @@ func (cStreamEmitter) Emit(ctx context.Context, streamID string, payload []byte)
 }
 
 func (cStreamEmitter) Close(streamID string, streamErr error) error {
-	request := struct {
-		StreamID string `json:"stream_id"`
-		Error    string `json:"error,omitempty"`
-	}{StreamID: streamID}
-	if streamErr != nil {
-		request.Error = streamErr.Error()
-	}
+	request := plugin.NewStreamCloseRequest(streamID, streamErr)
 	return callHost(context.Background(), "host.stream.close", request)
 }
 

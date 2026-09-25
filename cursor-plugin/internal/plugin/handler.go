@@ -9,7 +9,6 @@ import (
 	"cursorplugin/internal/cursorapi"
 	"cursorplugin/internal/cursorauth"
 	"cursorplugin/internal/cursorsession"
-	"cursorplugin/internal/openai"
 )
 
 type Handler struct {
@@ -47,20 +46,7 @@ func (handler *Handler) Call(ctx context.Context, method string, request []byte)
 func (handler *Handler) CallWithStatus(ctx context.Context, method string, request []byte) ([]byte, bool) {
 	result, err := handler.dispatch(ctx, method, request)
 	if err != nil {
-		httpStatus := 0
-		code := "cursor_plugin_error"
-		if errors.Is(err, openai.ErrInvalidRequest) {
-			httpStatus = http.StatusBadRequest
-		}
-		var loop *openai.ToolLoopError
-		if errors.As(err, &loop) {
-			code = "cursor_tool_loop_detected"
-		}
-		return marshalEnvelope(envelope{OK: false, Error: &envelopeError{
-			Code:       code,
-			Message:    err.Error(),
-			HTTPStatus: httpStatus,
-		}}), false
+		return marshalEnvelope(envelope{OK: false, Error: describeExecutionError(err)}), false
 	}
 	raw, err := json.Marshal(result)
 	if err != nil {
@@ -115,7 +101,7 @@ func registration() map[string]any {
 		"schema_version": 3,
 		"metadata": map[string]any{
 			"Name":             "cursor",
-			"Version":          "0.6.2",
+			"Version":          "0.6.3",
 			"Author":           "yobo",
 			"GitHubRepository": "https://github.com/yobo2u/omsub",
 			"Logo":             "",
