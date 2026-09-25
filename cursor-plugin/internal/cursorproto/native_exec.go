@@ -7,9 +7,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-const nativeReadOnlyExecPolicy = "Cursor native %s cannot run on the gateway host. Do not retry a native operation; use the exposed client tool `%s` instead, or report that the operation is unavailable and stop"
-
-func ReplyNativeReadOnlyExec(raw []byte) ([]byte, bool, error) {
+func ReplyNativeReadOnlyExec(raw []byte, tools []ToolDefinition) ([]byte, bool, error) {
 	server, err := newMessage("AgentServerMessage")
 	if err != nil {
 		return nil, false, err
@@ -68,7 +66,7 @@ func ReplyNativeReadOnlyExec(raw []byte) ([]byte, bool, error) {
 			return nil, true, err
 		}
 	}
-	if err := setString(failure, "error", fmt.Sprintf(nativeReadOnlyExecPolicy, toolName, toolName)); err != nil {
+	if err := setString(failure, "error", nativeExecPolicy(toolName, tools)); err != nil {
 		return nil, true, err
 	}
 	if err := setMessage(result, "error", failure); err != nil {
@@ -87,7 +85,7 @@ func ReplyNativeReadOnlyExec(raw []byte) ([]byte, bool, error) {
 	return reply, true, nil
 }
 
-func ReplyNativeShellExec(raw []byte) ([][]byte, bool, error) {
+func ReplyNativeShellExec(raw []byte, tools []ToolDefinition) ([][]byte, bool, error) {
 	server, err := newMessage("AgentServerMessage")
 	if err != nil {
 		return nil, false, err
@@ -105,7 +103,7 @@ func ReplyNativeShellExec(raw []byte) ([][]byte, bool, error) {
 		return nil, false, nil
 	}
 	args := execMessage.Get(operation).Message()
-	policy := fmt.Sprintf(nativeReadOnlyExecPolicy, "shell", "shell/exec")
+	policy := nativeExecPolicy("shell", tools)
 	failure, err := encodeNativeShellFailure(execMessage, args, policy)
 	if err != nil {
 		return nil, true, err

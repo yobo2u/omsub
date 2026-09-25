@@ -1,9 +1,11 @@
 package cursorapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 )
 
@@ -27,6 +29,19 @@ func (streamError connectStreamError) Unwrap() error {
 	return streamError.cause
 }
 
+func (streamError connectStreamError) StatusCode() int {
+	switch streamError.code {
+	case "unauthenticated":
+		return http.StatusUnauthorized
+	case "permission_denied":
+		return http.StatusForbidden
+	case "resource_exhausted":
+		return http.StatusTooManyRequests
+	default:
+		return 0
+	}
+}
+
 type connectEndStreamResponse struct {
 	Error *connectWireError `json:"error"`
 }
@@ -40,6 +55,10 @@ func IsInvalidArgument(err error) bool {
 }
 
 func IsReplayableCheckpointError(err error) bool {
+	var status interface{ StatusCode() int }
+	if errors.As(err, &status) && status.StatusCode() != 0 && status.StatusCode() != http.StatusBadRequest {
+		return false
+	}
 	return IsInvalidArgument(err) || errors.Is(err, ErrEmptyCompletion) || errors.Is(err, ErrInternalStream) ||
 		errors.Is(err, ErrFailedPrecondition) || errors.Is(err, ErrProgressTimeout)
 }
@@ -49,10 +68,25 @@ func runStatusError(status int, body []byte) error {
 		Code string `json:"code"`
 	}
 	if json.Unmarshal(body, &response) == nil && strings.EqualFold(response.Code, "invalid_argument") {
-		return fmt.Errorf("%w: Cursor Run returned HTTP %d", ErrInvalidArgument, status)
+		return &runHTTPError{status: status, cause: ErrInvalidArgument}
 	}
-	return fmt.Errorf("Cursor Run returned HTTP %d", status)
+	return &runHTTPError{status: status}
 }
+
+type runHTTPError struct {
+	status int
+	cause  error
+}
+
+func (err *runHTTPError) Error() string {
+	if err.cause != nil {
+		return fmt.Sprintf("%s: Cursor Run returned HTTP %d", err.cause, err.status)
+	}
+	return fmt.Sprintf("Cursor Run returned HTTP %d", err.status)
+}
+
+func (err *runHTTPError) Unwrap() error   { return err.cause }
+func (err *runHTTPError) StatusCode() int { return err.status }
 
 func connectEndStreamError(payload []byte) error {
 	if len(payload) == 0 {
@@ -73,7 +107,11 @@ func connectEndStreamError(payload []byte) error {
 		return connectStreamError{code: code, cause: ErrInternalStream}
 	case "failed_precondition":
 		return connectStreamError{code: code, cause: ErrFailedPrecondition}
-	case "canceled", "unknown", "deadline_exceeded", "not_found", "already_exists", "permission_denied",
+	case "canceled":
+		return connectStreamError{code: code, cause: context.Canceled}
+	case "deadline_exceeded":
+		return connectStreamError{code: code, cause: context.DeadlineExceeded}
+	case "unknown", "not_found", "already_exists", "permission_denied",
 		"resource_exhausted", "aborted", "out_of_range", "unimplemented",
 		"unavailable", "data_loss", "unauthenticated":
 		return connectStreamError{code: code}

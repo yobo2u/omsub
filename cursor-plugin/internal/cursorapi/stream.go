@@ -21,6 +21,7 @@ type streamState struct {
 	drain       *time.Timer
 	eventCounts map[string]int
 	queries     queryDiagnostic
+	trace       eventTrace
 }
 
 func readRunStream(
@@ -153,11 +154,12 @@ func (state *streamState) handleFrame(
 			return false, context.Cause(ctx)
 		}
 	}
-	reply, handled, err = cursorproto.ReplyNativeReadOnlyExec(frame.Payload)
+	reply, handled, err = cursorproto.ReplyNativeReadOnlyExec(frame.Payload, environment.Tools)
 	if err != nil {
 		return false, err
 	}
 	if handled {
+		state.result.InteractionResponded = true
 		select {
 		case outbound <- reply:
 			watchdogs.sawProgress()
@@ -165,11 +167,12 @@ func (state *streamState) handleFrame(
 			return false, context.Cause(ctx)
 		}
 	}
-	shellReplies, handled, err := cursorproto.ReplyNativeShellExec(frame.Payload)
+	shellReplies, handled, err := cursorproto.ReplyNativeShellExec(frame.Payload, environment.Tools)
 	if err != nil {
 		return false, err
 	}
 	if handled {
+		state.result.InteractionResponded = true
 		for _, shellReply := range shellReplies {
 			select {
 			case outbound <- shellReply:

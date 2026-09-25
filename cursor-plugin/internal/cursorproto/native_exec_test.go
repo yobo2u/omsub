@@ -23,7 +23,7 @@ func Test_ReplyNativeReadOnlyExec_returns_typed_policy_result_for_grep_and_read(
 			raw := encodeNativeReadOnlyExecRequest(t, 41, "exec-41", test.operation, test.path)
 
 			// When
-			reply, handled, err := ReplyNativeReadOnlyExec(raw)
+			reply, handled, err := ReplyNativeReadOnlyExec(raw, []ToolDefinition{{Name: test.name}})
 
 			// Then
 			require.NoError(t, err)
@@ -37,7 +37,7 @@ func Test_ReplyNativeReadOnlyExec_returns_typed_policy_result_for_grep_and_read(
 			require.Equal(t, "exec-41", execReply.Get(field(execReply, "exec_id")).String())
 			result := execReply.Get(field(execReply, test.result)).Message()
 			errorResult := result.Get(field(result, "error")).Message()
-			require.Contains(t, errorResult.Get(field(errorResult, "error")).String(), "client tool")
+			require.Contains(t, errorResult.Get(field(errorResult, "error")).String(), "`"+test.name+"`")
 			if test.name == "read" {
 				require.Equal(t, test.path, errorResult.Get(field(errorResult, "path")).String())
 			}
@@ -59,7 +59,7 @@ func Test_ReplyNativeShellExec_returns_failure_and_closes_stream(t *testing.T) {
 			raw := encodeNativeShellExecRequest(t, 51, "exec-51", test.operation, "pwd", "/downstream/workspace")
 
 			// When
-			replies, handled, err := ReplyNativeShellExec(raw)
+			replies, handled, err := ReplyNativeShellExec(raw, []ToolDefinition{{Name: "bash"}})
 
 			// Then
 			require.NoError(t, err)
@@ -130,7 +130,7 @@ func requireShellFailureReply(t *testing.T, raw []byte, id uint32, execID string
 	require.Equal(t, "pwd", failure.Get(field(failure, "command")).String())
 	require.Equal(t, "/downstream/workspace", failure.Get(field(failure, "working_directory")).String())
 	require.EqualValues(t, 1, failure.Get(field(failure, "exit_code")).Int())
-	require.Contains(t, failure.Get(field(failure, "stderr")).String(), "client tool")
+	require.Contains(t, failure.Get(field(failure, "stderr")).String(), "`bash`")
 	require.True(t, failure.Get(field(failure, "aborted")).Bool())
 }
 
@@ -145,6 +145,15 @@ func requireShellStreamSequence(t *testing.T, replies [][]byte, id uint32, execI
 		require.Equal(t, execID, execReply.Get(field(execReply, "exec_id")).String())
 		stream := execReply.Get(field(execReply, "shell_stream")).Message()
 		require.Equal(t, eventName, stream.WhichOneof(stream.Descriptor().Oneofs().ByName("event")).Name())
+		event := stream.Get(field(stream, eventName)).Message()
+		switch eventName {
+		case "stderr":
+			require.Contains(t, event.Get(field(event, "data")).String(), "`bash`")
+		case "exit":
+			require.EqualValues(t, 1, event.Get(field(event, "code")).Uint())
+			require.Equal(t, "/downstream/workspace", event.Get(field(event, "cwd")).String())
+			require.True(t, event.Get(field(event, "aborted")).Bool())
+		}
 	}
 	client, err := newMessage("AgentClientMessage")
 	require.NoError(t, err)

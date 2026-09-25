@@ -1,11 +1,13 @@
 package cursorapi
 
 import (
-	"cursorplugin/internal/cursorproto"
 	"errors"
 	"fmt"
 	"sort"
 	"strings"
+	"time"
+
+	"cursorplugin/internal/cursorproto"
 )
 
 func (state *streamState) recordEvent(event cursorproto.ServerEvent) {
@@ -17,6 +19,7 @@ func (state *streamState) recordEvent(event cursorproto.ServerEvent) {
 		state.eventCounts = make(map[string]int)
 	}
 	state.eventCounts[eventType]++
+	state.trace.record(eventTraceEntry{elapsed: time.Since(state.started), typeName: eventType, progress: eventMakesProgress(event.Kind)})
 }
 
 func (state *streamState) annotateProgressTimeout(err error) error {
@@ -25,6 +28,9 @@ func (state *streamState) annotateProgressTimeout(err error) error {
 	}
 	if diagnostic := state.queries.summary(); diagnostic != "" {
 		err = fmt.Errorf("%w (Cursor query diag v1: %s)", err, diagnostic)
+	}
+	if trace := state.trace.summary(); trace != "" {
+		err = fmt.Errorf("%w (Cursor event trace v1: %s)", err, trace)
 	}
 	types := make([]string, 0, len(state.eventCounts))
 	for eventType := range state.eventCounts {

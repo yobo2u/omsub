@@ -35,14 +35,19 @@ func Test_Client_Run_replies_to_native_grep_read_and_shell_stream_without_stalli
 	})
 	client := newTestClient(t, transport, Config{OverallTimeout: 2 * time.Second})
 	var events []cursorproto.ServerEvent
+	input := validRunInput()
+	for _, name := range []string{"grep", "read", "bash"} {
+		input.Tools = append(input.Tools, cursorproto.ToolDefinition{Name: name, Parameters: []byte(`{"type":"object"}`)})
+	}
 
-	result, err := client.Run(context.Background(), validRunInput(), func(event cursorproto.ServerEvent) error {
+	result, err := client.Run(context.Background(), input, func(event cursorproto.ServerEvent) error {
 		events = append(events, event)
 		return nil
 	})
 
 	require.NoError(t, err)
 	require.True(t, result.OutputExposed)
+	require.True(t, result.InteractionResponded)
 	require.Equal(t, []cursorproto.EventKind{
 		cursorproto.EventIgnored, cursorproto.EventIgnored, cursorproto.EventIgnored, cursorproto.EventText, cursorproto.EventDone,
 	}, eventKinds(events))
@@ -162,11 +167,11 @@ func requireNativeReadOnlyPolicyReply(t *testing.T, raw []byte, id uint64, execI
 	result := requireWireBytes(t, execReply, resultField)
 	failure := requireWireBytes(t, result, 2)
 	if path == "" {
-		require.Contains(t, string(requireWireBytes(t, failure, 1)), "client tool")
+		require.Contains(t, string(requireWireBytes(t, failure, 1)), "`grep`")
 		return
 	}
 	require.Equal(t, path, string(requireWireBytes(t, failure, 1)))
-	require.Contains(t, string(requireWireBytes(t, failure, 2)), "client tool")
+	require.Contains(t, string(requireWireBytes(t, failure, 2)), "`read`")
 }
 
 func requireNativeShellStreamReplies(t *testing.T, replies [][]byte, id uint64, execID string) {
@@ -180,9 +185,11 @@ func requireNativeShellStreamReplies(t *testing.T, replies [][]byte, id uint64, 
 		requireWireBytes(t, stream, eventField)
 	}
 	execReply := requireWireBytes(t, replies[3], 2)
+	require.Equal(t, id, requireWireVarint(t, execReply, 1))
+	require.Equal(t, execID, string(requireWireBytes(t, execReply, 15)))
 	result := requireWireBytes(t, execReply, 2)
 	failure := requireWireBytes(t, result, 2)
-	require.Contains(t, string(requireWireBytes(t, failure, 6)), "client tool")
+	require.Contains(t, string(requireWireBytes(t, failure, 6)), "`bash`")
 	control := requireWireBytes(t, replies[4], 5)
 	streamClose := requireWireBytes(t, control, 1)
 	require.Equal(t, id, requireWireVarint(t, streamClose, 1))
