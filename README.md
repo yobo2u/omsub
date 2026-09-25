@@ -4,20 +4,20 @@
 
 ## 当前源码版本
 
-当前源码版本为 **0.6.2**，修复同一 Cursor 认证文件出现两条账户记录，以及工具调用前 MCP 工具目录查询无人应答导致的超时，并包含原生交互拒绝应答与检查点重放保护。完整变更与限制见 [0.6.2 版本说明](cursor-plugin/docs/releases/v0.6.2.md)。
+当前源码版本为 **0.6.3**，在账户去重与 MCP 工具目录应答修复基础上，改进原生工具交接、插件检查点重放判断、取消/超时错误分类及大上下文用量统计开销。完整变更与宿主限制见 [0.6.3 版本说明](cursor-plugin/docs/releases/v0.6.3.md)。
 
-源码版本更新不等于 GitHub Release 发布或现网升级。以下下载链接仍指向已发布的 v0.5.10；0.6.2 发布包须另行构建和发布。
+源码、GitHub Release 和现网部署是独立状态。以下为 v0.6.3 的发布入口；安装包以对应 Release 附件及校验值为准，更新源码不会自动升级已运行的插件。
 
 ## 获取已发布版本与安装
 
-- [GitHub Releases](https://github.com/yobo2u/omsub/releases/tag/v0.5.10)
-- [Linux amd64 发布包](https://github.com/yobo2u/omsub/releases/download/v0.5.10/cursor-plugin-0.5.10-linux-amd64.tar.gz)
+- [GitHub Release v0.6.3](https://github.com/yobo2u/omsub/releases/tag/v0.6.3)
+- [Linux amd64 发布包](https://github.com/yobo2u/omsub/releases/download/v0.6.3/cursor-plugin-0.6.3-linux-amd64.tar.gz)
 - [安装和调用说明](cursor-plugin/README.md)
 - [免责声明](cursor-plugin/DISCLAIMER.md)
 - [第三方来源说明](cursor-plugin/THIRD_PARTY_NOTICES.md)
 
 GitHub Release 同时提供符合 CLIProxyAPI 官方插件商店格式的
-`cursor_0.5.10_linux_amd64.zip` 和 `checksums.txt`。ZIP 根目录只包含
+`cursor_0.6.3_linux_amd64.zip` 和 `checksums.txt`。ZIP 根目录只包含
 `cursor.so`；TAR 包继续用于手动安装。
 发布物校验值见同一 Release 中的 `checksums.txt`。
 

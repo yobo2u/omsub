@@ -7,12 +7,12 @@
 
 ## 当前源码版本
 
-当前源码版本为 **0.6.2**，变更见[版本说明](docs/releases/v0.6.2.md)。更新源码或打包版本不会自动发布 GitHub Release、升级已运行插件或启用账户策略。以下 0.6.2 包名用于本地构建或对应 Release 发布后的安装；已发布版本下载入口见[仓库首页](https://github.com/yobo2u/omsub/tree/cursor)。
+当前源码版本为 **0.6.3**，变更见[版本说明](docs/releases/v0.6.3.md)，安装包见 [GitHub Release v0.6.3](https://github.com/yobo2u/omsub/releases/tag/v0.6.3)。更新源码或打包版本不会自动升级已运行插件或启用账户策略；安装前请校验同一 Release 的 `checksums.txt`。
 
 ## 已验证宿主环境
 
-- CLIProxyAPI `v7.2.154`，提交 `ba7e558`
-- CPA Manager Plus `v1.12.10`
+- CLIProxyAPI `v7.3.17`，提交 `9bdde54`
+- CPA Manager Plus `v1.14.0`
 - Linux amd64
 - Cursor OAuth、动态模型发现、非流式、SSE 流式和错误路径
 - 插件自有 Cursor 管理页、受认证管理 API、模型禁用与本地估算用量
@@ -25,10 +25,10 @@
 `cursor` 安装。商店会从最新的 `v<version>` GitHub Release 下载当前平台 ZIP，
 并用同一 Release 中的 `checksums.txt` 校验文件。
 
-0.6.2 商店格式包仅面向 Linux amd64：
+0.6.3 商店格式包仅面向 Linux amd64：
 
 ```text
-cursor_0.6.2_linux_amd64.zip
+cursor_0.6.3_linux_amd64.zip
 checksums.txt
 ```
 
@@ -37,8 +37,8 @@ checksums.txt
 解压发布包，然后把 `--plugins-dir` 指向 CLIProxyAPI 配置中的 `plugins.dir`：
 
 ```sh
-tar -xzf cursor-plugin-0.6.2-linux-amd64.tar.gz
-cd cursor-plugin-0.6.2-linux-amd64
+tar -xzf cursor-plugin-0.6.3-linux-amd64.tar.gz
+cd cursor-plugin-0.6.3-linux-amd64
 sudo ./install.sh --plugins-dir /opt/cpa-manager-plus/cliproxyapi/plugins
 ```
 
@@ -101,6 +101,7 @@ sudo ./uninstall.sh --plugins-dir /opt/cpa-manager-plus/cliproxyapi/plugins
 ## 能力与边界
 
 - 0.6.1 的可选工具循环防护、检查点命中优化和增量摘要说明见[行为与验收说明](docs/cursor-tool-loop-and-cache.md)。硬停止默认关闭，仅对账户认证 JSON 中 `tool_loop_guard_tools` 精确列出的工具启用；本版本不会自动修改账户策略，也不保证消除所有重复操作。
+- 0.6.3 的工具交接、结构化超时和宿主配套要求见[流式错误边界](docs/cursor-stream-failures.md)。不支持结构化错误的宿主仍可读取错误字符串，但不会自动获得修正后的冷却与重试分类；不能仅升级插件就视为问题全部解除。
 - v0.5.10 的修复和升级说明见[发布说明](docs/releases/v0.5.10.md)。原生 grep/read/shell 请求会收到完整的不可执行协议回复，由客户端已公开的工具完成实际操作；网关不会执行这些原生文件读取或命令。
 - 工具结果续轮会明确标记已完成的结果，帮助 Agent 继续回答，避免重复前言或再次发出已完成的工具调用。已有 OpenCode 会话中保存的重复内容不会被自动修改。
 - 支持 OpenAI `chat-completions` 文本消息、非流式和 SSE 流式响应，并兼容 OpenCode 发送的 `max_tokens`、`stream_options` 等扩展字段。
