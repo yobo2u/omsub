@@ -1,6 +1,7 @@
 package cursorproto
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +19,12 @@ const maxGeneratedImageBytes = 16 << 20
 type ImageWriteExecutor struct {
 	projectFolder string
 	writtenPaths  []string
+	completed     map[imageWriteKey]string
+}
+
+type imageWriteKey struct {
+	path   string
+	digest [sha256.Size]byte
 }
 
 type imageWriteRequest struct {
@@ -56,6 +63,7 @@ func (executor *ImageWriteExecutor) Cleanup() error {
 		}
 	}
 	executor.writtenPaths = nil
+	executor.completed = nil
 	return cleanupErr
 }
 
@@ -138,7 +146,17 @@ func (executor *ImageWriteExecutor) writeImage(requestedPath string, data []byte
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return "", errors.New("Cursor project assets path is not a real directory")
 	}
+	key := imageWriteKey{path: target, digest: sha256.Sum256(data)}
+	if completed, ok := executor.completed[key]; ok {
+		return completed, nil
+	}
 	file, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, os.ErrExist) {
+		file, err = os.CreateTemp(assetsDirectory, "cursor-image-*"+filepath.Ext(target))
+		if err == nil {
+			target = file.Name()
+		}
+	}
 	if err != nil {
 		return "", fmt.Errorf("create Cursor generated image %q: %w", target, err)
 	}
@@ -149,10 +167,13 @@ func (executor *ImageWriteExecutor) writeImage(requestedPath string, data []byte
 	syncErr := file.Sync()
 	closeErr := file.Close()
 	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
-		_ = os.Remove(target)
-		return "", fmt.Errorf("write Cursor generated image %q: %w", target, err)
+		return "", fmt.Errorf("write Cursor generated image %q: %w", target, errors.Join(err, os.Remove(target)))
 	}
 	executor.writtenPaths = append(executor.writtenPaths, target)
+	if executor.completed == nil {
+		executor.completed = make(map[imageWriteKey]string)
+	}
+	executor.completed[key] = target
 	return target, nil
 }
 

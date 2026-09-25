@@ -1,6 +1,6 @@
 # Cursor image capabilities and plugin contract
 
-**Protocol checked:** 2026-09-11 (Asia/Shanghai). **Implementation updated:** 2026-09-12 for v0.5.10.
+**Protocol checked:** 2026-09-11 (Asia/Shanghai). **Image-write collision handling updated:** 2026-09-25 for v0.6.4.
 
 **Scope:** Cursor product documentation, xAI documentation, the installed first-party Cursor 3.19.19 application and Agent CLI `2026.07.16-899851b`, and the v0.5.10 plugin changes based on commit `e0d3f6b806c8a3136382f3920ccfeef166ed04b1`. The initial protocol investigation was read-only; implementation and deployment acceptance followed separately.
 
@@ -20,7 +20,7 @@ The important distinction is that `cursor/grok-4.6` is the Agent's reasoning mod
 ## Implemented flow
 
 1. The plugin sends the original chat request to `/agent.v1.AgentService/Run`.
-   It includes the workspace/project context and answers subsequent `request_context_args` requests. Binary image writes are limited to direct children of the project assets directory, at most 16 MiB per image, and never overwrite existing files. Files created for a run are removed when that run finishes.
+   It includes the workspace/project context and answers subsequent `request_context_args` requests. Binary image writes are limited to direct children of the project assets directory, at most 16 MiB per image, and never overwrite existing files. Within a run, repeated writes with the same requested path and bytes reuse the successful result. A filename collision with another write or an existing file allocates an exclusive temporary filename in the same assets directory, preserving the extension and returning the actual absolute path upstream. Different image bytes never reuse a previous result. Files created for a run are removed when that run finishes; existing files are not removed. The project folder remains stable for checkpoint continuity.
 2. When Cursor sends `InteractionQuery.generate_image_request_query`, the plugin mirrors the query ID and description in an approved `InteractionResponse.generate_image_request_response`.
 3. This matches the installed Cursor Agent CLI's non-interactive behavior. The interactive CLI may ask a human first; a headless API has no interactive approval surface.
 4. When Cursor sends a completed `generate_image_tool_call`, the plugin decodes `result.success.image_data`, validates that the bytes are an image, and derives the MIME type from the content or returned file extension.
