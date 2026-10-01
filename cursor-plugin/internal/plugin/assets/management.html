@@ -148,7 +148,7 @@
     </header>
     <section class="panel warning" aria-labelledby="quota-title">
       <h2 id="quota-title" data-i18n="quotaTitle">订阅额度说明</h2>
-      <p><span data-i18n="quotaBodyPrefix">Cursor 未公开稳定的 OAuth </span><span class="nowrap" data-i18n="quotaBodyTerm">订阅剩余额度接口</span><span data-i18n="quotaAccuracyPrefix">。这里不会伪造</span><span class="nowrap" data-i18n="quotaAccuracyTerm">百分比</span><span data-i18n="quotaUsagePrefix">；仅显示插件进程启动后的</span><span class="nowrap" data-i18n="quotaUsageTerm">本地估算用量</span><span data-i18n="quotaUsageJoin">与</span><span class="nowrap" data-i18n="quotaStatusTerm">请求状态</span><span data-i18n="quotaBodySuffixPrefix">。缓存 Token 未知时会明确显示</span><span class="nowrap" data-i18n="quotaUnknownTerm">“未知”</span><span class="nowrap" data-i18n="quotaBodySuffixSuffix">。</span></p>
+      <p data-i18n="quotaBody">计划用量来自 Cursor DashboardService/GetCurrentPeriodUsage，与 CLI 的 /usage 相同。下方的本地 Token 仍是本进程估算。</p>
     </section>
     <section class="panel" aria-labelledby="credential-title">
       <div class="credential-grid">
@@ -178,18 +178,19 @@
           headerPrefix: "由 Cursor 插件直接提供，不依赖",
           headerJoin: "或",
           headerSuffix: "前端改造。",
-          quotaTitle: "订阅额度说明",
-          quotaBodyPrefix: "Cursor 未公开稳定的 OAuth ",
-          quotaBodyTerm: "订阅剩余额度接口",
-          quotaAccuracyPrefix: "。这里不会伪造",
-          quotaAccuracyTerm: "百分比",
-          quotaUsagePrefix: "；仅显示插件进程启动后的",
-          quotaUsageTerm: "本地估算用量",
-          quotaUsageJoin: "与",
-          quotaStatusTerm: "请求状态",
-          quotaBodySuffixPrefix: "。缓\u2060存 Token 未\u2060知时会明确显\u2060示",
-          quotaUnknownTerm: "“未知”",
-          quotaBodySuffixSuffix: "。",
+          quotaTitle: "订阅额度",
+          quotaBody: "计划用量来自 Cursor DashboardService/GetCurrentPeriodUsage，与 CLI 的 /usage 相同。下方的本地 Token 仍是本进程估算。",
+          quotaPlan: "计划",
+          quotaIncluded: "已用套餐",
+          quotaAuto: "Auto 已用",
+          quotaApi: "API 已用",
+          cursorModels: "Cursor 模型",
+          otherModels: "其他模型",
+          grokBot: "Grok Bot",
+          grokBotReset: "Grok Bot 重置",
+          quotaReset: "重置时间",
+          quotaOnDemand: "按量付费",
+          onDemandDisabled: "已关闭",
           managementKeyLabel: "管理密钥",
           keyHelp: "只保留在当前页面内存中，不写入浏览器存储。",
           loadStatus: "加载状态",
@@ -250,17 +251,18 @@
           headerJoin: "or",
           headerSuffix: "are required.",
           quotaTitle: "Subscription quota",
-          quotaBodyPrefix: "Cursor does not publish a stable OAuth API for ",
-          quotaBodyTerm: "remaining subscription quota",
-          quotaAccuracyPrefix: ". This page never invents ",
-          quotaAccuracyTerm: "a percentage",
-          quotaUsagePrefix: ". It shows only ",
-          quotaUsageTerm: "local estimated usage",
-          quotaUsageJoin: " and ",
-          quotaStatusTerm: "request status",
-          quotaBodySuffixPrefix: " since the plugin process started. Cached tokens are shown as ",
-          quotaUnknownTerm: "Unknown",
-          quotaBodySuffixSuffix: " when unavailable.",
+          quotaBody: "Plan usage comes from Cursor DashboardService/GetCurrentPeriodUsage, the same call /usage uses. Local token counts below stay process estimates.",
+          quotaPlan: "Plan",
+          quotaIncluded: "Included used",
+          quotaAuto: "Auto used",
+          quotaApi: "API used",
+          cursorModels: "Cursor Models",
+          otherModels: "Other Models",
+          grokBot: "Grok Bot",
+          grokBotReset: "Grok Bot resets",
+          quotaReset: "Resets",
+          quotaOnDemand: "On-demand",
+          onDemandDisabled: "Disabled",
           managementKeyLabel: "management key",
           keyHelp: "Kept only in this page's memory and never written to browser storage.",
           loadStatus: "Load status",
@@ -448,6 +450,25 @@
         return translations[currentLanguage][`status_${normalized}`] || status || translate("status_unknown");
       }
 
+      function formatPercent(value) {
+        return typeof value === "number" ? `${value.toFixed(1)}%` : translate("unknown");
+      }
+
+      function formatUsed(value) {
+        if (typeof value !== "number") return translate("unknown");
+        if (value > 0 && value < 1) return "1%";
+        return `${Math.round(value)}%`;
+      }
+
+      function formatOnDemand(quota) {
+        if (!quota || quota.status !== "available") return quota?.reason || translate("unavailable");
+        const used = typeof quota.on_demand_used_cents === "number" ? (quota.on_demand_used_cents / 100).toFixed(2) : translate("unknown");
+        if (quota.on_demand_kind === "disabled") return translate("onDemandDisabled");
+        if (quota.on_demand_kind === "unlimited") return `${used} / unlimited`;
+        if (typeof quota.on_demand_limit_cents === "number") return `${used} / ${(quota.on_demand_limit_cents / 100).toFixed(2)}`;
+        return used;
+      }
+
       function renderAccount(account) {
         const card = document.createElement("section");
         card.className = "panel account";
@@ -469,7 +490,14 @@
         const metrics = document.createElement("div");
         metrics.className = "metrics";
         metrics.append(
-          metric(translate("quotaBalance"), translate("unavailable")),
+          metric(translate("quotaPlan"), [account.subscription_quota?.plan_name, account.subscription_quota?.price].filter(Boolean).join(" ") || translate("unknown")),
+          metric(translate("quotaIncluded"), formatPercent(account.subscription_quota?.included_percent_used)),
+          metric(translate("cursorModels"), formatUsed(account.subscription_quota?.auto_percent_used)),
+          metric(translate("otherModels"), formatUsed(account.subscription_quota?.api_percent_used)),
+          metric(translate("grokBot"), formatUsed(account.subscription_quota?.grok_bot_percent_used)),
+          metric(translate("grokBotReset"), account.subscription_quota?.grok_bot_resets_at || translate("unknown")),
+          metric(translate("quotaReset"), account.subscription_quota?.resets_at || translate("unknown")),
+          metric(translate("quotaOnDemand"), formatOnDemand(account.subscription_quota)),
           metric(translate("localEstimatedTokens"), account.local_usage?.total_tokens || 0),
           metric(translate("pluginExecutorRuns"), account.local_usage?.executor_runs || 0),
           metric(translate("cachedTokens"), translate("unknown")),

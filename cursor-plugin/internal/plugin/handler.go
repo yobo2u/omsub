@@ -104,6 +104,7 @@ func registration() map[string]any {
 			"Version":          "0.6.6",
 			"Author":           "yobo",
 			"GitHubRepository": "https://github.com/yobo2u/omsub",
+
 			"Logo":             "",
 			"ConfigFields":     []string{},
 		},
@@ -111,7 +112,7 @@ func registration() map[string]any {
 			"auth_provider":            true,
 			"model_provider":           true,
 			"management_api":           true,
-			"request_interceptor":      true,
+			"request_interceptor":      false,
 			"request_lifecycle_plugin": true,
 			"usage_plugin":             false,
 			"executor":                 true,
