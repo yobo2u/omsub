@@ -26,21 +26,15 @@ func (handler *Handler) modelsForAuth(ctx context.Context, raw []byte) (any, err
 	if err != nil {
 		return nil, err
 	}
-	models, err := handler.cursor.DiscoverModels(ctx, credentials.AccessToken)
+	catalog, err := handler.modelCatalog(ctx, credentials.AccessToken, true)
 	if err != nil {
 		return nil, err
 	}
-	var contexts map[string]int64
-	if provider, ok := handler.cursor.(modelContextProvider); ok {
-		contexts, err = provider.ModelContextLengths(ctx, credentials.AccessToken)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			contexts = nil
-		}
+	names := make(map[string]string, len(catalog.Models))
+	for _, model := range catalog.Models {
+		names[model.ID] = model.DisplayName
 	}
-	return modelResponse(filterDisabledModels(models, credentials.DisabledModels), contexts), nil
+	return modelResponseWithNames(filterDisabledModels(catalogIDs(catalog.Models), credentials.DisabledModels), catalog.ContextLengths, names), nil
 }
 
 func filterDisabledModels(models, disabled []string) []string {
@@ -65,17 +59,25 @@ func filterDisabledModels(models, disabled []string) []string {
 }
 
 func modelResponse(ids []string, contexts map[string]int64) any {
+	return modelResponseWithNames(ids, contexts, nil)
+}
+
+func modelResponseWithNames(ids []string, contexts map[string]int64, names map[string]string) any {
 	models := make([]modelInfo, 0, len(ids))
 	for _, rawID := range ids {
 		id := strings.TrimSpace(rawID)
 		if id == "" {
 			continue
 		}
+		displayName := "Cursor " + id
+		if name := strings.TrimSpace(names[id]); name != "" {
+			displayName = "Cursor " + name
+		}
 		models = append(models, modelInfo{
 			ID:                         "cursor/" + id,
 			Object:                     "model",
 			OwnedBy:                    "cursor",
-			DisplayName:                "Cursor " + id,
+			DisplayName:                displayName,
 			SupportedGenerationMethods: []string{"chat"},
 			SupportedInputModalities:   []string{"text", "image"},
 			SupportedOutputModalities:  []string{"text", "image"},

@@ -33,6 +33,23 @@ func Test_ModelContextLengths_omits_missing_invalid_and_max_only_limits(t *testi
 	require.Equal(t, map[string]int64{"base": 123456, "server": 123456}, limits)
 }
 
+func Test_EditorCatalog_filters_chat_and_max_metadata(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"models":[{"name":"family","clientDisplayName":"Family","supportsAgent":true,"contextTokenLimit":200000,"legacySlugs":["family","family"],"variants":[{"legacySlug":"family-high"},{"legacySlug":"family-max","isMaxMode":true}]},{"name":"max-only","supportsNonMaxMode":false},{"name":"chat","supportsAgent":false}]}`))
+	}))
+	defer server.Close()
+	client, err := NewClient(Config{BaseURL: server.URL, HTTPClient: server.Client()})
+	require.NoError(t, err)
+	catalog, err := client.EditorCatalog(context.Background(), "synthetic-token")
+	require.NoError(t, err)
+	require.Len(t, catalog.Models, 2)
+	require.Equal(t, []string{"family", "family-high"}, catalog.Models[0].Slugs)
+	require.True(t, catalog.Models[0].SupportsAgent)
+	require.False(t, catalog.Models[1].SupportsAgent)
+	require.Equal(t, int64(200000), catalog.ContextLengths["family-high"])
+	require.NotContains(t, catalog.ContextLengths, "family-max")
+}
+
 func Test_ModelContextLengths_rejects_invalid_metadata(t *testing.T) {
 	for _, fixture := range []struct {
 		name   string

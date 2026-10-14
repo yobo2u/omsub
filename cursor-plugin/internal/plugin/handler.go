@@ -19,6 +19,7 @@ type Handler struct {
 	usage    *usageStore
 	sessions *cursorsession.Store
 	turns    *sessionTurnLocks
+	catalogs ttlCache[modelCatalog]
 }
 
 func NewHandler(dependencies Dependencies) *Handler {

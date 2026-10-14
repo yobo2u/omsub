@@ -150,6 +150,19 @@ func cursorProjectName(workspacePath string) string {
 }
 
 func (client *Client) DiscoverModels(ctx context.Context, accessToken string) ([]string, error) {
+	details, err := client.DiscoverModelDetails(ctx, accessToken)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(details))
+	for _, detail := range details {
+		ids = append(ids, detail.ID)
+	}
+	return ids, nil
+}
+
+// DiscoverModelDetails returns the CLI model catalog including display names and aliases.
+func (client *Client) DiscoverModelDetails(ctx context.Context, accessToken string) ([]cursorproto.ModelDetail, error) {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, client.endpoint("/agent.v1.AgentService/GetUsableModels"), http.NoBody)
@@ -172,7 +185,7 @@ func (client *Client) DiscoverModels(ctx context.Context, accessToken string) ([
 	if len(raw) > maxModelResponseBytes {
 		return nil, errors.New("Cursor models response exceeds 4 MiB")
 	}
-	models, err := cursorproto.DecodeModels(raw)
+	models, err := cursorproto.DecodeModelDetails(raw)
 	if err != nil {
 		return nil, err
 	}

@@ -111,11 +111,11 @@ func (handler *Handler) cursorAccountStatusWithCredential(ctx context.Context, f
 	if credentialErr != nil {
 		return cursorAccountStatus{}, credentialErr
 	}
-	models, err := handler.cursor.DiscoverModels(ctx, credential.AccessToken)
+	catalog, err := handler.modelCatalog(ctx, credential.AccessToken, false)
 	if err != nil {
 		return cursorAccountStatus{}, fmt.Errorf("discover Cursor models: %w", err)
 	}
-	items, metadataStatus := handler.managementModelContexts(ctx, models, credential)
+	items := handler.managementModelContexts(catalog, credential)
 	metricKey := cursorMetricKey(file)
 	localUsage := handler.usage.snapshot(metricKey)
 	return cursorAccountStatus{
@@ -128,7 +128,7 @@ func (handler *Handler) cursorAccountStatusWithCredential(ctx context.Context, f
 		LocalUsage:         localUsage,
 		CheckpointMetrics:  handler.usage.checkpoints.snapshot(metricKey),
 		Models:             items,
-		ModelContextStatus: metadataStatus,
+		ModelContextStatus: catalog.MetadataStatus,
 	}, nil
 }
 
@@ -181,11 +181,11 @@ func (handler *Handler) updateDisabledModels(ctx context.Context, body []byte) (
 	if err != nil {
 		return managementError(http.StatusBadGateway, err.Error()), nil
 	}
-	available, err := handler.cursor.DiscoverModels(ctx, credential.AccessToken)
+	catalog, err := handler.modelCatalog(ctx, credential.AccessToken, true)
 	if err != nil {
 		return managementError(http.StatusBadGateway, "discover Cursor models: "+err.Error()), nil
 	}
-	known := normalizedModelSet(available)
+	known := normalizedModelSet(catalogIDs(catalog.Models))
 	disabled := sortedUniqueModels(update.DisabledModels)
 	for _, id := range disabled {
 		if _, ok := known[id]; !ok {
