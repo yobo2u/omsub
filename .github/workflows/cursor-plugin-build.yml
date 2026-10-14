@@ -2,39 +2,49 @@ name: Cursor plugin build
 
 on:
   push:
-    branches:
-      - cursor
-    tags:
-      - "v*.*.*"
+    branches: [cursor]
+    tags: ["v*.*.*"]
     paths:
       - ".github/workflows/cursor-plugin-build.yml"
       - "cursor-plugin/**"
+  pull_request:
+    paths:
+      - ".github/workflows/cursor-plugin-build.yml"
+      - "cursor-plugin/**"
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  linux-amd64:
-    runs-on: ubuntu-24.04
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    container: golang:1.25-bookworm
+    env:
+      CGO_ENABLED: "1"
+      GOOS: linux
+      GOARCH: ${{ matrix.arch }}
     defaults:
       run:
         working-directory: cursor-plugin
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: cursor-plugin/go.mod
-          cache-dependency-path: cursor-plugin/go.sum
+      - name: Install packaging tools
+        run: apt-get update -qq && apt-get install -y -qq zip unzip file
       - name: Test
         run: go test -race -shuffle=on -count=1 ./...
       - name: Vet
         run: go vet ./...
-      - name: Build Linux amd64 plugin
-        env:
-          CGO_ENABLED: "1"
-          GOARCH: amd64
-          GOOS: linux
-        run: go build -trimpath -buildmode=c-shared -o cursor.so .
+      - name: Build native shared library
+        run: go build -buildvcs=false -trimpath -buildmode=c-shared -o cursor.so .
       - name: Resolve version
         id: version
         shell: bash
@@ -44,27 +54,42 @@ jobs:
             version="${GITHUB_REF_NAME#v}"
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Test packaging and installer
+        run: sh packaging/test-packaging.sh
       - name: Package standalone installer
-        run: ./packaging/build-release.sh "${{ steps.version.outputs.version }}"
+        run: sh packaging/build-release.sh "${{ steps.version.outputs.version }}"
       - name: Package plugin store asset
-        run: ./packaging/build-store-release.sh "${{ steps.version.outputs.version }}"
+        run: sh packaging/build-store-release.sh "${{ steps.version.outputs.version }}"
       - uses: actions/upload-artifact@v4
         with:
-          name: cursor-plugin-${{ steps.version.outputs.version }}-linux-amd64
+          name: cursor-plugin-linux-${{ matrix.arch }}
           path: |
-            cursor-plugin/release/cursor-plugin-${{ steps.version.outputs.version }}-linux-amd64.tar.gz
-            cursor-plugin/release/cursor_${{ steps.version.outputs.version }}_linux_amd64.zip
-            cursor-plugin/release/checksums.txt
+            cursor-plugin/release/cursor-plugin-${{ steps.version.outputs.version }}-linux-${{ matrix.arch }}.tar.gz
+            cursor-plugin/release/cursor_${{ steps.version.outputs.version }}_linux_${{ matrix.arch }}.zip
           if-no-files-found: error
-      - name: Publish plugin store release
-        if: github.ref_type == 'tag'
+
+  publish:
+    if: github.ref_type == 'tag' && github.event_name == 'push'
+    needs: linux
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cursor-plugin-linux-*
+          path: dist
+          merge-multiple: true
+      - name: Publish both architectures with one checksum manifest
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "$GITHUB_REF_NAME"
-          "release/cursor_${{ steps.version.outputs.version }}_linux_amd64.zip"
-          "release/checksums.txt"
-          "release/cursor-plugin-${{ steps.version.outputs.version }}-linux-amd64.tar.gz"
-          --repo "$GITHUB_REPOSITORY"
-          --title "Cursor plugin $GITHUB_REF_NAME"
-          --notes-file "docs/releases/$GITHUB_REF_NAME.md"
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum ./*.zip ./*.tar.gz > checksums.txt
+          gh release create "$GITHUB_REF_NAME" ./*.zip ./*.tar.gz checksums.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Cursor plugin $GITHUB_REF_NAME" \
+            --notes-file "../cursor-plugin/docs/releases/$GITHUB_REF_NAME.md"

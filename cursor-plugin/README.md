@@ -25,16 +25,17 @@
 `cursor` 安装。商店会从最新的 `v<version>` GitHub Release 下载当前平台 ZIP，
 并用同一 Release 中的 `checksums.txt` 校验文件。
 
-0.6.6 商店格式包仅面向 Linux amd64：
+构建工作流支持 Linux amd64 和 arm64，分别在原生运行器上编译和测试。商店格式包按架构命名（以下以 0.6.6 为例）：
 
 ```text
 cursor_0.6.6_linux_amd64.zip
+cursor_0.6.6_linux_arm64.zip
 checksums.txt
 ```
 
 ### 手动安装
 
-解压发布包，然后把 `--plugins-dir` 指向 CLIProxyAPI 配置中的 `plugins.dir`：
+选择与主机架构一致的发布包（x86_64 使用 amd64，aarch64 使用 arm64），然后把 `--plugins-dir` 指向 CLIProxyAPI 配置中的 `plugins.dir`。以下为 amd64 示例；ARM64 请将包名中的 `amd64` 替换为 `arm64`：
 
 ```sh
 tar -xzf cursor-plugin-0.6.6-linux-amd64.tar.gz
