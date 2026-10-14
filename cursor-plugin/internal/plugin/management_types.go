@@ -40,8 +40,10 @@ type hostAuthGetResponse struct {
 }
 
 type cursorQuotaStatus struct {
-	Status string `json:"status"`
-	Reason string `json:"reason"`
+	Status string         `json:"status"`
+	Reason string         `json:"reason"`
+	Plan   string         `json:"plan,omitempty"`
+	Quota  *quotaResponse `json:"quota,omitempty"`
 }
 
 type cursorAccountStatus struct {

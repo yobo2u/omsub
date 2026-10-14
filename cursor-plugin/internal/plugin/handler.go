@@ -19,6 +19,7 @@ type Handler struct {
 	usage    *usageStore
 	sessions *cursorsession.Store
 	turns    *sessionTurnLocks
+	quotas   ttlCache[quotaSnapshot]
 }
 
 func NewHandler(dependencies Dependencies) *Handler {
@@ -69,7 +70,13 @@ func (handler *Handler) dispatch(ctx context.Context, method string, request []b
 		return handler.observeRequestAuth(request)
 	case "request.complete":
 		return handler.completeRequest(request)
-	case "auth.identifier", "executor.identifier":
+	case "quota.describe":
+		return quotaDescription(), nil
+	case "quota.fetch":
+		return handler.fetchQuota(ctx, request)
+	case "quota.reset":
+		return map[string]any{"success": false, "message": "Cursor usage cannot be reset from CLIProxyAPI"}, nil
+	case "auth.identifier", "executor.identifier", "quota.identifier":
 		return map[string]string{"identifier": "cursor"}, nil
 	case "auth.parse":
 		return handler.parseAuth(request)
@@ -111,6 +118,7 @@ func registration() map[string]any {
 			"auth_provider":            true,
 			"model_provider":           true,
 			"management_api":           true,
+			"quota_provider":           true,
 			"request_interceptor":      true,
 			"request_lifecycle_plugin": true,
 			"usage_plugin":             false,

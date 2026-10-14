@@ -11,7 +11,7 @@ import (
 	"cursorplugin/internal/cursorauth"
 )
 
-const quotaUnavailableReason = "Cursor does not publish a subscription remaining-quota API"
+const quotaUnavailableReason = "Cursor credential could not be read"
 
 func (handler *Handler) managementStatus(ctx context.Context) (managementResponse, error) {
 	files, err := handler.cursorAuthFiles(ctx)
@@ -124,7 +124,7 @@ func (handler *Handler) cursorAccountStatusWithCredential(ctx context.Context, f
 		Label:              file.Label,
 		Status:             cursorPluginStatus(file.Status, localUsage.LastOutcome),
 		HostRuntime:        cursorHostRuntime(file),
-		SubscriptionQuota:  cursorQuotaStatus{Status: "unavailable", Reason: quotaUnavailableReason},
+		SubscriptionQuota:  handler.managementQuotaStatus(ctx, credential.AccessToken),
 		LocalUsage:         localUsage,
 		CheckpointMetrics:  handler.usage.checkpoints.snapshot(metricKey),
 		Models:             items,

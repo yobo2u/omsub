@@ -36,7 +36,7 @@ func Test_Handler_ManagementStatus_reports_models_disabled_rules_and_honest_quot
 	require.NoError(t, err)
 	require.Equal(t, 200, response.StatusCode)
 	require.Contains(t, string(response.Body), `"subscription_quota":{"status":"unavailable"`)
-	require.Contains(t, string(response.Body), `"reason":"Cursor does not publish a subscription remaining-quota API"`)
+	require.Contains(t, string(response.Body), `"reason":"Cursor usage API is unavailable in this client"`)
 	require.Contains(t, string(response.Body), `"id":"gpt-5","disabled":true`)
 	require.NotContains(t, string(response.Body), "secret-access")
 	require.NotContains(t, string(response.Body), "secret-refresh")
