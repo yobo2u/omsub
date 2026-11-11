@@ -13,18 +13,20 @@ import (
 
 const connectEndStreamFlag byte = 0x02
 const toolCheckpointDrain = 2 * time.Second
+const maxToolCheckpointDrain = 5 * time.Second
 
 type streamState struct {
-	result      RunResult
-	started     time.Time
-	terminal    bool
-	contentSeen bool
-	doneSent    bool
-	doneSeen    bool
-	drain       *time.Timer
-	eventCounts map[string]int
-	queries     queryDiagnostic
-	trace       eventTrace
+	result        RunResult
+	started       time.Time
+	terminal      bool
+	contentSeen   bool
+	doneSent      bool
+	doneSeen      bool
+	drain         *time.Timer
+	drainDeadline time.Time
+	eventCounts   map[string]int
+	queries       queryDiagnostic
+	trace         eventTrace
 }
 
 func readRunStream(
@@ -208,9 +210,10 @@ func (state *streamState) handleFrame(
 		if !state.result.ToolCallSeen {
 			return state.terminal, nil
 		}
-		if state.drain != nil {
-			state.drain.Reset(toolCheckpointDrain)
+		if state.doneSeen && cursorproto.MatchesPendingTools(state.result.Checkpoint, state.result.ToolCallIDs) {
+			return true, nil
 		}
+		state.armDrain(toolCheckpointDrain)
 		return false, nil
 	}
 	if state.doneSeen || (state.terminal && event.Kind != cursorproto.EventToolCall) {
@@ -238,6 +241,9 @@ func (state *streamState) handleFrame(
 	}
 	state.doneSent = state.doneSent || event.Kind == cursorproto.EventDone
 	state.doneSeen = state.doneSeen || event.Kind == cursorproto.EventDone
+	if event.Kind == cursorproto.EventDone && !state.result.ToolCallSeen && len(state.result.Checkpoint) > 0 && !cursorproto.HasPendingTools(state.result.Checkpoint) {
+		return true, nil
+	}
 	if event.Kind == cursorproto.EventDone || event.Kind == cursorproto.EventToolCall {
 		if state.result.ToolCallSeen {
 			drainDelay = toolCheckpointDrain
@@ -251,12 +257,32 @@ func (state *streamState) handleFrame(
 			// Cursor can send the checkpoint for the tool after its exec request.
 			drainDelay = toolCheckpointDrain
 		}
-		if state.drain != nil {
-			state.drain.Stop()
+		if state.doneSeen && state.result.ToolCallSeen && cursorproto.MatchesPendingTools(state.result.Checkpoint, state.result.ToolCallIDs) {
+			return true, nil
 		}
-		state.drain = time.NewTimer(drainDelay)
+		state.armDrain(drainDelay)
 	}
 	return false, nil
+}
+
+func (state *streamState) armDrain(delay time.Duration) {
+	now := time.Now()
+	if state.result.ToolCallSeen {
+		if state.drainDeadline.IsZero() {
+			state.drainDeadline = now.Add(maxToolCheckpointDrain)
+		}
+		remaining := time.Until(state.drainDeadline)
+		if remaining <= 0 {
+			remaining = time.Millisecond
+		}
+		if delay > remaining {
+			delay = remaining
+		}
+	}
+	if state.drain != nil {
+		state.drain.Stop()
+	}
+	state.drain = time.NewTimer(delay)
 }
 
 // Keep only checkpoints consistent with the complete output exposed to the client.

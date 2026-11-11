@@ -150,8 +150,8 @@ func requestWithIdentitySources(source identitySources) executorRequest {
 	}
 }
 
-func TestSessionIdentity_cache_keys(t *testing.T) {
-	for _, key := range []string{"canonical_session_id", "prompt_cache_key", "session_id", "conversation_id", "x-prompt-cache-key", "prompt-cache-key"} {
+func TestSessionIdentity_extended_conversation_keys(t *testing.T) {
+	for _, key := range []string{"canonical_session_id", "session_id", "conversation_id"} {
 		t.Run(key, func(t *testing.T) {
 			for _, source := range []string{"metadata", "payload", "original"} {
 				request := executorRequest{}
@@ -170,7 +170,7 @@ func TestSessionIdentity_cache_keys(t *testing.T) {
 			}
 		})
 	}
-	for _, header := range []string{"x-prompt-cache-key", "prompt-cache-key", "session_id", "conversation_id", "canonical_session_id", "prompt_cache_key"} {
+	for _, header := range []string{"session_id", "session-id", "x-conversation-id", "conversation-id", "conversation_id", "canonical_session_id"} {
 		request := executorRequest{}
 		request.Headers = map[string][]string{header: {"session"}}
 		identity, ok := request.stableSessionIdentity()
@@ -178,7 +178,7 @@ func TestSessionIdentity_cache_keys(t *testing.T) {
 		require.Equal(t, "session", identity.String())
 	}
 	request := executorRequest{}
-	require.NoError(t, json.Unmarshal([]byte(`{"canonical_session_id":"canonical","session_id":"session","prompt_cache_key":"cache"}`), &request.Metadata))
+	require.NoError(t, json.Unmarshal([]byte(`{"canonical_session_id":"canonical","session_id":"session"}`), &request.Metadata))
 	identity, ok := request.stableSessionIdentity()
 	require.True(t, ok)
 	require.Equal(t, "canonical", identity.String())
