@@ -16,6 +16,7 @@ type Turn struct {
 	model         string
 	created       int64
 	text          string
+	reasoning     string
 	tools         []responseToolCall
 	images        []responseImage
 	toolIDOwners  map[string]string
@@ -46,10 +47,11 @@ type completionChoice struct {
 }
 
 type assistantMessage struct {
-	Role      string             `json:"role,omitempty"`
-	Content   string             `json:"content,omitempty"`
-	ToolCalls []responseToolCall `json:"tool_calls,omitempty"`
-	Images    []responseImage    `json:"images,omitempty"`
+	Role             string             `json:"role,omitempty"`
+	Content          string             `json:"content,omitempty"`
+	ReasoningContent string             `json:"reasoning_content,omitempty"`
+	ToolCalls        []responseToolCall `json:"tool_calls,omitempty"`
+	Images           []responseImage    `json:"images,omitempty"`
 }
 
 type responseImage struct {
@@ -90,6 +92,23 @@ func (turn *Turn) StreamChunk(text string) ([]byte, error) {
 		Choices: []completionChoice{{
 			Index: 0,
 			Delta: &assistantMessage{Role: "assistant", Content: text},
+		}},
+	}
+	return marshalStreamPayload(payload)
+}
+
+// StreamReasoning emits a standalone reasoning_content delta so clients can
+// render the model's thinking stream separately from the answer body.
+func (turn *Turn) StreamReasoning(text string) ([]byte, error) {
+	turn.reasoning += text
+	payload := chatCompletion{
+		ID:      turn.id,
+		Object:  "chat.completion.chunk",
+		Created: turn.created,
+		Model:   turn.model,
+		Choices: []completionChoice{{
+			Index: 0,
+			Delta: &assistantMessage{Role: "assistant", ReasoningContent: text},
 		}},
 	}
 	return marshalStreamPayload(payload)
@@ -155,7 +174,7 @@ func (turn *Turn) Completion(prompt string) ([]byte, error) {
 		Model:   turn.model,
 		Choices: []completionChoice{{
 			Index:        0,
-			Message:      &assistantMessage{Role: "assistant", Content: turn.text, ToolCalls: turn.tools, Images: turn.images},
+			Message:      &assistantMessage{Role: "assistant", Content: turn.text, ReasoningContent: turn.reasoning, ToolCalls: turn.tools, Images: turn.images},
 			FinishReason: &finish,
 		}},
 		Usage: turn.EstimatedUsage(prompt),
@@ -169,6 +188,11 @@ func (turn *Turn) Completion(prompt string) ([]byte, error) {
 
 func (turn *Turn) AddText(text string) {
 	turn.text += text
+}
+
+// AddReasoning accumulates reasoning text for non-streaming responses.
+func (turn *Turn) AddReasoning(text string) {
+	turn.reasoning += text
 }
 
 func (turn *Turn) AddToolCall(id, name, arguments string) {
