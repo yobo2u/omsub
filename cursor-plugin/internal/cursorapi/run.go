@@ -19,6 +19,7 @@ type RunInput struct {
 	Prompt         string
 	ConversationID string
 	Checkpoint     []byte
+	Blobs          *cursorproto.BlobStore
 	Mode           cursorproto.ContinuationMode
 	Tools          []cursorproto.ToolDefinition
 	Images         []cursorproto.ImageAttachment
@@ -26,10 +27,14 @@ type RunInput struct {
 }
 
 type RunResult struct {
+	Blobs                *cursorproto.BlobStore
 	ConversationID       string
 	Checkpoint           []byte
 	OutputExposed        bool
 	ToolExposed          bool
+	ToolCallSeen         bool
+	ToolCallID           string
+	ToolCallIDs          []string
 	InteractionResponded bool
 	TTFT                 time.Duration
 }
@@ -46,7 +51,11 @@ func (client *Client) Run(
 	if conversationID == "" {
 		conversationID = "cursor_" + strings.ReplaceAll(randomUUID(), "-", "")
 	}
-	result := RunResult{ConversationID: conversationID}
+	blobs := input.Blobs
+	if blobs == nil {
+		blobs = cursorproto.NewBlobStore()
+	}
+	result := RunResult{ConversationID: conversationID, Blobs: blobs}
 	environment := cursorproto.RequestEnvironment{
 		TimeZone: "UTC", WorkspacePaths: []string{client.workspacePath}, ProjectFolder: client.projectFolder,
 		Tools: input.Tools,
@@ -112,7 +121,7 @@ func (client *Client) Run(
 	}
 	imageWrites := cursorproto.NewImageWriteExecutor(environment.ProjectFolder)
 	result, streamErr := readRunStream(
-		runContext, runResponse.Body, result, emit, cursorproto.NewBlobStore(), imageWrites, environment, outbound, watchdogs, client.trailingDrain,
+		runContext, runResponse.Body, result, emit, blobs, imageWrites, environment, outbound, watchdogs, client.trailingDrain,
 	)
 	close(stopWriter)
 	readerErr := runBodyReader.Close()

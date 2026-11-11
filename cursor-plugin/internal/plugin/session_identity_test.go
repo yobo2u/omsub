@@ -149,3 +149,37 @@ func requestWithIdentitySources(source identitySources) executorRequest {
 		},
 	}
 }
+
+func TestSessionIdentity_cache_keys(t *testing.T) {
+	for _, key := range []string{"canonical_session_id", "prompt_cache_key", "session_id", "conversation_id", "x-prompt-cache-key", "prompt-cache-key"} {
+		t.Run(key, func(t *testing.T) {
+			for _, source := range []string{"metadata", "payload", "original"} {
+				request := executorRequest{}
+				body := []byte(`{"` + key + `":" cache-session "}`)
+				switch source {
+				case "metadata":
+					require.NoError(t, json.Unmarshal(body, &request.Metadata))
+				case "payload":
+					request.Payload = body
+				case "original":
+					request.OriginalRequest = body
+				}
+				identity, ok := request.stableSessionIdentity()
+				require.True(t, ok)
+				require.Equal(t, "cache-session", identity.String())
+			}
+		})
+	}
+	for _, header := range []string{"x-prompt-cache-key", "prompt-cache-key", "session_id", "conversation_id", "canonical_session_id", "prompt_cache_key"} {
+		request := executorRequest{}
+		request.Headers = map[string][]string{header: {"session"}}
+		identity, ok := request.stableSessionIdentity()
+		require.True(t, ok)
+		require.Equal(t, "session", identity.String())
+	}
+	request := executorRequest{}
+	require.NoError(t, json.Unmarshal([]byte(`{"canonical_session_id":"canonical","session_id":"session","prompt_cache_key":"cache"}`), &request.Metadata))
+	identity, ok := request.stableSessionIdentity()
+	require.True(t, ok)
+	require.Equal(t, "canonical", identity.String())
+}

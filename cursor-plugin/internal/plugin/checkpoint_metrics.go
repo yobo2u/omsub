@@ -5,9 +5,15 @@ import (
 
 	"cursorplugin/internal/cursorapi"
 	"cursorplugin/internal/cursorproto"
+	"cursorplugin/internal/cursorsession"
 )
 
 type checkpointMetricStatus struct {
+	MissNoIdentity      int64 `json:"miss_no_identity"`
+	MissColdStart       int64 `json:"miss_cold_start"`
+	MissExpired         int64 `json:"miss_expired"`
+	MissLineageMismatch int64 `json:"miss_lineage_mismatch"`
+
 	Scope                   string `json:"scope"`
 	Hits                    int64  `json:"hits"`
 	Misses                  int64  `json:"misses"`
@@ -30,12 +36,26 @@ func newCheckpointMetrics() *checkpointMetrics {
 }
 
 func (metrics *checkpointMetrics) recordLookup(authIndex string, hit bool) {
+	metrics.recordLookupReason(authIndex, hit, cursorsession.ReasonMissing)
+}
+
+func (metrics *checkpointMetrics) recordLookupReason(authIndex string, hit bool, reason cursorsession.Reason) {
 	metrics.update(authIndex, func(status *checkpointMetricStatus) {
 		if hit {
 			status.Hits++
 			return
 		}
 		status.Misses++
+		switch reason {
+		case "no_identity":
+			status.MissNoIdentity++
+		case cursorsession.ReasonMissing, cursorsession.ReasonIdentityMismatch, cursorsession.ReasonModelMismatch, cursorsession.ReasonSessionMismatch:
+			status.MissColdStart++
+		case cursorsession.ReasonExpired:
+			status.MissExpired++
+		default:
+			status.MissLineageMismatch++
+		}
 	})
 }
 
@@ -75,6 +95,11 @@ func (metrics *checkpointMetrics) total() checkpointMetricStatus {
 	for _, status := range metrics.byAuth {
 		total.Hits += status.Hits
 		total.Misses += status.Misses
+		total.MissNoIdentity += status.MissNoIdentity
+		total.MissColdStart += status.MissColdStart
+		total.MissExpired += status.MissExpired
+		total.MissLineageMismatch += status.MissLineageMismatch
+
 		total.Invalidations += status.Invalidations
 		total.Fallbacks += status.Fallbacks
 		total.FullReplayBytes += status.FullReplayBytes
@@ -107,7 +132,12 @@ func finalizedCheckpointMetrics(status checkpointMetricStatus) checkpointMetricS
 
 func mergeCheckpointMetricStatus(left, right checkpointMetricStatus) checkpointMetricStatus {
 	return finalizedCheckpointMetrics(checkpointMetricStatus{
-		Hits:                  left.Hits + right.Hits,
+		Hits:                left.Hits + right.Hits,
+		MissNoIdentity:      left.MissNoIdentity + right.MissNoIdentity,
+		MissColdStart:       left.MissColdStart + right.MissColdStart,
+		MissExpired:         left.MissExpired + right.MissExpired,
+		MissLineageMismatch: left.MissLineageMismatch + right.MissLineageMismatch,
+
 		Misses:                left.Misses + right.Misses,
 		Invalidations:         left.Invalidations + right.Invalidations,
 		Fallbacks:             left.Fallbacks + right.Fallbacks,

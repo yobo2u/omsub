@@ -3,6 +3,7 @@ package cursorproto
 import (
 	"errors"
 	"fmt"
+	"maps"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -23,6 +24,21 @@ type BlobStore struct {
 
 func NewBlobStore() *BlobStore {
 	return &BlobStore{blobs: make(map[string][]byte)}
+}
+
+func (store *BlobStore) Clone() *BlobStore {
+	if store == nil {
+		return nil
+	}
+	// Blob data is immutable: set copies incoming bytes and replaces the map entry.
+	return &BlobStore{blobs: maps.Clone(store.blobs), totalBytes: store.totalBytes}
+}
+
+func (store *BlobStore) ByteSize() int {
+	if store == nil {
+		return 0
+	}
+	return store.totalBytes
 }
 
 func (store *BlobStore) HandleServerMessage(raw []byte) ([]byte, bool, error) {

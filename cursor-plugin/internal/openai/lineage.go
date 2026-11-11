@@ -121,6 +121,9 @@ func canonicalizeMessage(message Message) canonicalMessage {
 		part := message.Content[index]
 		switch part.Kind {
 		case ContentText:
+			if part.Text == "" && len(message.ToolCalls) > 0 && len(message.Content) == 1 {
+				continue
+			}
 			texts := []string{part.Text}
 			for index+1 < len(message.Content) && message.Content[index+1].Kind == ContentText {
 				index++

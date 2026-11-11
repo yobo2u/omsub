@@ -145,7 +145,7 @@ func Test_Client_Run_times_out_when_only_liveness_frames_arrive(t *testing.T) {
 }
 
 func Test_Client_Run_reports_text_tool_and_trailing_checkpoint_without_duplicate_output(t *testing.T) {
-	checkpoint := []byte{0x22, 0x07, 0x70, 0x65, 0x6e, 0x64, 0x69, 0x6e, 0x67}
+	checkpoint := pendingCheckpoint("call_1")
 	body := newChunkBody(
 		connectFrame(textServerMessage("ok")),
 		connectFrame(mcpExecServerMessage(7, "call_1", "read_file", "path", "probe.txt")),
