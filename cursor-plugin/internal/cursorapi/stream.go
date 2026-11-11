@@ -224,6 +224,9 @@ func (state *streamState) handleFrame(
 			state.doneSent = true
 			state.doneSeen = true
 			state.result.OutputExposed = true
+			if state.result.ToolCallSeen && cursorproto.MatchesPendingTools(state.result.Checkpoint, state.result.ToolCallIDs) {
+				return true, nil
+			}
 		}
 		return false, nil
 	}
@@ -241,11 +244,9 @@ func (state *streamState) handleFrame(
 	}
 	state.doneSent = state.doneSent || event.Kind == cursorproto.EventDone
 	state.doneSeen = state.doneSeen || event.Kind == cursorproto.EventDone
-	if event.Kind == cursorproto.EventDone && !state.result.ToolCallSeen && len(state.result.Checkpoint) > 0 && !cursorproto.HasPendingTools(state.result.Checkpoint) {
-		return true, nil
-	}
 	if event.Kind == cursorproto.EventDone || event.Kind == cursorproto.EventToolCall {
 		if state.result.ToolCallSeen {
+			// Cursor can send the checkpoint for the tool after its exec request.
 			drainDelay = toolCheckpointDrain
 		}
 		state.terminal = true
@@ -254,11 +255,7 @@ func (state *streamState) handleFrame(
 			state.result.ToolCallSeen = true
 			state.result.ToolCallID = event.ID
 			state.result.ToolCallIDs = append(state.result.ToolCallIDs, event.ID)
-			// Cursor can send the checkpoint for the tool after its exec request.
 			drainDelay = toolCheckpointDrain
-		}
-		if state.doneSeen && state.result.ToolCallSeen && cursorproto.MatchesPendingTools(state.result.Checkpoint, state.result.ToolCallIDs) {
-			return true, nil
 		}
 		state.armDrain(drainDelay)
 	}

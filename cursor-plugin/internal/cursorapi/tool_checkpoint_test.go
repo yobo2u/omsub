@@ -141,3 +141,65 @@ func Test_Client_Run_discards_pending_checkpoint_without_exposed_tool_call(t *te
 	require.Empty(t, result.ToolCallIDs)
 	require.Empty(t, result.Checkpoint)
 }
+
+func Test_Client_Run_waits_for_post_done_text_checkpoint_after_pre_done_checkpoint(t *testing.T) {
+	staleCheckpoint := []byte{0x0a, 0x05, 's', 't', 'a', 'l', 'e'}
+	finalCheckpoint := []byte{0x0a, 0x05, 'f', 'i', 'n', 'a', 'l'}
+	body := newChunkBody(
+		connectFrame(checkpointServerMessage(staleCheckpoint)),
+		connectFrame(textServerMessage("answer")),
+		connectFrame(turnEndedServerMessage()),
+		connectFrame(checkpointServerMessage(finalCheckpoint)),
+	)
+	client := newTestClient(t, staticResponseTransport(body), Config{TrailingDrainTimeout: 100 * time.Millisecond})
+
+	result, err := client.Run(context.Background(), validRunInput(), func(cursorproto.ServerEvent) error { return nil })
+
+	require.NoError(t, err)
+	require.False(t, result.ToolCallSeen)
+	require.Equal(t, finalCheckpoint, result.Checkpoint)
+}
+
+func Test_Client_Run_stops_immediately_once_done_and_matching_tool_checkpoint_seen(t *testing.T) {
+	checkpoint := pendingCheckpoint("call_1")
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		readConnectPayload(t, request.Body)
+		_, _ = writer.Write(connectFrame(mcpExecServerMessage(7, "call_1", "read_file", "path", "probe.txt")))
+		_, _ = writer.Write(connectFrame(checkpointServerMessage(checkpoint)))
+		_, _ = writer.Write(connectFrame(turnEndedServerMessage()))
+		writer.(http.Flusher).Flush()
+		<-request.Context().Done()
+	}))
+	server.EnableHTTP2 = true
+	server.StartTLS()
+	defer server.Close()
+	client, err := NewClient(Config{BaseURL: server.URL, HTTPClient: server.Client()})
+	require.NoError(t, err)
+	started := time.Now()
+
+	result, err := client.Run(context.Background(), validRunInput(), func(cursorproto.ServerEvent) error { return nil })
+
+	require.NoError(t, err)
+	require.Equal(t, checkpoint, result.Checkpoint)
+	require.Less(t, time.Since(started), time.Second)
+}
+
+func Test_streamState_armDrain_caps_delay_to_remaining_tool_drain_deadline(t *testing.T) {
+	state := &streamState{
+		result:        RunResult{ToolCallSeen: true},
+		drainDeadline: time.Now().Add(40 * time.Millisecond),
+	}
+	defer func() {
+		if state.drain != nil {
+			state.drain.Stop()
+		}
+	}()
+
+	state.armDrain(toolCheckpointDrain)
+
+	select {
+	case <-state.drain.C:
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("drain timer exceeded maxToolCheckpointDrain deadline")
+	}
+}
