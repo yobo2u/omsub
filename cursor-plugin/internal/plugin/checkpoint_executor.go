@@ -12,8 +12,9 @@ import (
 )
 
 type runObservation struct {
-	text     strings.Builder
+	text     bool
 	toolCall bool
+	toolIDs  []string
 	image    bool
 }
 
@@ -22,6 +23,7 @@ func (handler *Handler) runCheckpointed(
 	request executorRequest,
 	chat openai.ChatRequest,
 	credentials cursorauth.Credentials,
+	turn *openai.Turn,
 	emit func(cursorproto.ServerEvent) error,
 ) (cursorapi.RunResult, error) {
 	ctx, cancel := context.WithCancel(ctx)
@@ -37,6 +39,7 @@ func (handler *Handler) runCheckpointed(
 	}
 	session, hasSession := request.stableSessionIdentity()
 	if accountIdentity == "" || !hasSession {
+		handler.usage.checkpoints.recordLookupReason(request.AuthID, false, "no_identity")
 		input := fullReplayInput(chat, credentials.AccessToken)
 		result, _, err := handler.runAttempt(ctx, input, boundedEmit)
 		handler.usage.checkpoints.recordRun(request.AuthID, input, result)
@@ -57,7 +60,6 @@ func (handler *Handler) runCheckpointed(
 		SystemDigest:  string(chat.Lineage.SystemDigest),
 		PrefixDigests: lineageDigests(chat.Lineage.PrefixDigests),
 	})
-	handler.usage.checkpoints.recordLookup(request.AuthID, lookup.Reason == cursorsession.ReasonHit)
 	input := fullReplayInput(chat, credentials.AccessToken)
 	hasToolResult := false
 	if lookup.Reason == cursorsession.ReasonHit {
@@ -67,17 +69,19 @@ func (handler *Handler) runCheckpointed(
 				AccessToken: credentials.AccessToken, Model: chat.Model,
 				ConversationID: lookup.Snapshot.ConversationID,
 				Checkpoint:     lookup.Snapshot.CheckpointBytes(), Mode: cursorproto.CheckpointSuffix,
+				Blobs:  lookup.Snapshot.BlobStore(),
 				Prompt: continuation.Prompt, Tools: cursorTools(chat.Tools),
 				Images: cursorImages(continuation.Images), Attachments: cursorAttachments(continuation.Attachments),
 			}
 			hasToolResult = continuation.HasToolResult
 		} else {
+			lookup.Reason = cursorsession.ReasonMessageCountMismatch
 			handler.sessions.Invalidate(key, cursorsession.ReasonMessageCountMismatch)
 			handler.usage.checkpoints.recordInvalidation(request.AuthID)
 			token, _ = handler.sessions.Start(key, cursorsession.Match{})
-			handler.usage.checkpoints.recordLookup(request.AuthID, false)
 		}
 	}
+	handler.usage.checkpoints.recordLookupReason(request.AuthID, input.Mode == cursorproto.CheckpointSuffix, lookup.Reason)
 
 	result, observation, runErr := handler.runAttempt(ctx, input, boundedEmit)
 	handler.usage.checkpoints.recordRun(request.AuthID, input, result)
@@ -98,16 +102,23 @@ func (handler *Handler) runCheckpointed(
 		}
 		return result, runErr
 	}
-	if result.ToolExposed || observation.toolCall || observation.image || result.ConversationID == "" || len(result.Checkpoint) == 0 || observation.text.Len() == 0 {
+	if observation.image || result.ConversationID == "" || len(result.Checkpoint) == 0 {
 		return result, nil
 	}
-	confirmedLineage := chat.LineageWithAssistant(observation.text.String())
+	if (result.ToolExposed || observation.toolCall) &&
+		!cursorproto.MatchesPendingTools(result.Checkpoint, observation.toolIDs) {
+		return result, nil
+	}
+	confirmedLineage, ok := chat.LineageWithAssistant(turn)
+	if !ok {
+		return result, nil
+	}
 	covered := len(chat.Transcript) + 1
 	if covered > len(confirmedLineage.PrefixDigests) {
 		return result, nil
 	}
 	handler.sessions.Commit(token, cursorsession.Confirmed{
-		ConversationID: result.ConversationID, Checkpoint: result.Checkpoint,
+		ConversationID: result.ConversationID, Checkpoint: result.Checkpoint, Blobs: result.Blobs,
 		CoveredMessageCount: covered, SystemDigest: string(confirmedLineage.SystemDigest),
 		PrefixDigest: string(confirmedLineage.PrefixDigests[covered-1]),
 	})
@@ -127,8 +138,9 @@ func (handler *Handler) runAttempt(
 	result, err := handler.cursor.Run(ctx, input, func(event cursorproto.ServerEvent) error {
 		switch event.Kind {
 		case cursorproto.EventText:
-			observation.text.WriteString(event.Text)
+			observation.text = observation.text || event.Text != ""
 		case cursorproto.EventToolCall:
+			observation.toolIDs = append(observation.toolIDs, event.ID)
 			observation.toolCall = true
 		case cursorproto.EventImage:
 			observation.image = true
@@ -156,7 +168,7 @@ func shouldRetryFresh(
 	retryable := cursorapi.IsReplayableCheckpointError(err)
 	return input.Mode == cursorproto.CheckpointSuffix && retryable &&
 		!result.InteractionResponded &&
-		!result.OutputExposed && !result.ToolExposed && observation.text.Len() == 0 && !observation.toolCall && !observation.image && !hasToolResult
+		!result.OutputExposed && !result.ToolExposed && !observation.text && !observation.toolCall && !observation.image && !hasToolResult
 }
 
 func lineageDigests(digests []openai.Digest) []string {

@@ -67,7 +67,13 @@ func (request executorRequest) stableSessionIdentity() (sessionIdentity, bool) {
 	if request.Metadata.ExecutionSessionID.Valid() {
 		return newSessionIdentity(request.Metadata.ExecutionSessionID.String())
 	}
-	for _, name := range []string{"X-Session-ID", "Session_id", "X-Client-Request-Id"} {
+	for _, key := range []string{"canonical_session_id", "session_id", "conversation_id"} {
+		var value optionalIdentity
+		if json.Unmarshal(request.Metadata.Fields[key], &value) == nil && value.Valid() {
+			return newSessionIdentity(value.String())
+		}
+	}
+	for _, name := range []string{"X-Session-ID", "Session_id", "X-Client-Request-Id", "canonical_session_id", "session_id", "session-id", "x-conversation-id", "conversation-id", "conversation_id"} {
 		if identity, ok := sessionIdentityFromHeader(request.Headers, name); ok {
 			return identity, true
 		}
@@ -112,18 +118,15 @@ func firstSessionIdentity(values []string) (sessionIdentity, bool) {
 }
 
 func sessionIdentityFromBody(raw []byte) (sessionIdentity, bool) {
-	var body struct {
-		ConversationID optionalIdentity `json:"conversation_id"`
-		SessionID      optionalIdentity `json:"session_id"`
-	}
+	var body map[string]json.RawMessage
 	if len(raw) == 0 || json.Unmarshal(raw, &body) != nil {
 		return sessionIdentity{}, false
 	}
-	if body.ConversationID.Valid() {
-		return newSessionIdentity(body.ConversationID.String())
-	}
-	if body.SessionID.Valid() {
-		return newSessionIdentity(body.SessionID.String())
+	for _, key := range []string{"canonical_session_id", "conversation_id", "session_id"} {
+		var value optionalIdentity
+		if json.Unmarshal(body[key], &value) == nil && value.Valid() {
+			return newSessionIdentity(value.String())
+		}
 	}
 	return sessionIdentity{}, false
 }

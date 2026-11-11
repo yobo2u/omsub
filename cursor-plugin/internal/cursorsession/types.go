@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"cursorplugin/internal/cursorproto"
 )
 
 const (
@@ -62,6 +64,7 @@ type Match struct {
 type Confirmed struct {
 	ConversationID      string
 	Checkpoint          []byte
+	Blobs               *cursorproto.BlobStore
 	CoveredMessageCount int
 	SystemDigest        string
 	PrefixDigest        string
@@ -74,10 +77,15 @@ type Snapshot struct {
 	PrefixDigest        string
 	Generation          uint64
 	checkpoint          []byte
+	blobs               *cursorproto.BlobStore
 }
 
 func (s Snapshot) CheckpointBytes() []byte {
 	return append([]byte(nil), s.checkpoint...)
+}
+
+func (s Snapshot) BlobStore() *cursorproto.BlobStore {
+	return s.blobs.Clone()
 }
 
 type Result struct {

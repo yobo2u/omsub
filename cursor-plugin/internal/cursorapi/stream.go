@@ -5,23 +5,28 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"time"
 
 	"cursorplugin/internal/cursorproto"
 )
 
 const connectEndStreamFlag byte = 0x02
+const toolCheckpointDrain = 2 * time.Second
+const maxToolCheckpointDrain = 5 * time.Second
 
 type streamState struct {
-	result      RunResult
-	started     time.Time
-	terminal    bool
-	contentSeen bool
-	doneSent    bool
-	drain       *time.Timer
-	eventCounts map[string]int
-	queries     queryDiagnostic
-	trace       eventTrace
+	result        RunResult
+	started       time.Time
+	terminal      bool
+	contentSeen   bool
+	doneSent      bool
+	doneSeen      bool
+	drain         *time.Timer
+	drainDeadline time.Time
+	eventCounts   map[string]int
+	queries       queryDiagnostic
+	trace         eventTrace
 }
 
 func readRunStream(
@@ -37,39 +42,44 @@ func readRunStream(
 	drainDelay time.Duration,
 ) (RunResult, error) {
 	state := streamState{result: result, started: time.Now()}
+	defer func() {
+		if state.drain != nil {
+			state.drain.Stop()
+		}
+	}()
 	decoder := cursorproto.NewFrameDecoder(32 << 20)
 	reads := startBodyReader(body)
 	defer stopBodyReader(body, reads)
 	for {
 		read, drainExpired, err := nextBodyRead(ctx, reads, state.drain)
 		if err != nil {
-			return state.result, state.annotateProgressTimeout(runCause(ctx, err))
+			return state.finalResult(), state.annotateProgressTimeout(runCause(ctx, err))
 		}
 		if drainExpired {
-			return state.result, nil
+			return state.finalResult(), nil
 		}
 		if len(read.data) > 0 {
 			watchdogs.sawData()
 			frames, err := decoder.Push(read.data)
 			if err != nil {
-				return state.result, err
+				return state.finalResult(), err
 			}
 			for _, frame := range frames {
 				watchdogs.sawFrame()
 				finished, err := state.handleFrame(ctx, frame, emit, blobs, imageWrites, environment, outbound, watchdogs, drainDelay)
 				if err != nil || finished {
-					return state.result, state.annotateProgressTimeout(err)
+					return state.finalResult(), state.annotateProgressTimeout(err)
 				}
 			}
 		}
 		if errors.Is(read.err, io.EOF) {
 			if state.terminal {
-				return state.result, nil
+				return state.finalResult(), nil
 			}
-			return state.result, errors.New("Cursor stream closed before turn end")
+			return state.finalResult(), errors.New("Cursor stream closed before turn end")
 		}
 		if read.err != nil {
-			return state.result, state.annotateProgressTimeout(runCause(ctx, fmt.Errorf("read Cursor stream: %w", read.err)))
+			return state.finalResult(), state.annotateProgressTimeout(runCause(ctx, fmt.Errorf("read Cursor stream: %w", read.err)))
 		}
 	}
 }
@@ -189,16 +199,34 @@ func (state *streamState) handleFrame(
 	state.recordEvent(event)
 	state.queries.record(event, time.Since(state.started))
 	if event.Kind == cursorproto.EventCheckpoint {
+		if state.result.ToolCallSeen {
+			ids, ok := cursorproto.CheckpointPendingToolCalls(event.Checkpoint)
+			if !ok || len(ids) < len(state.result.ToolCallIDs) || !slices.Equal(ids[:len(state.result.ToolCallIDs)], state.result.ToolCallIDs) {
+				return false, nil
+			}
+		}
+
 		state.result.Checkpoint = append(state.result.Checkpoint[:0], event.Checkpoint...)
-		return state.terminal, nil
+		if !state.result.ToolCallSeen {
+			return state.terminal, nil
+		}
+		if state.doneSeen && cursorproto.MatchesPendingTools(state.result.Checkpoint, state.result.ToolCallIDs) {
+			return true, nil
+		}
+		state.armDrain(toolCheckpointDrain)
+		return false, nil
 	}
-	if state.terminal {
+	if state.doneSeen || (state.terminal && event.Kind != cursorproto.EventToolCall) {
 		if event.Kind == cursorproto.EventDone && !state.doneSent {
 			if err := emit(event); err != nil {
 				return false, fmt.Errorf("emit Cursor event: %w", err)
 			}
 			state.doneSent = true
+			state.doneSeen = true
 			state.result.OutputExposed = true
+			if state.result.ToolCallSeen && cursorproto.MatchesPendingTools(state.result.Checkpoint, state.result.ToolCallIDs) {
+				return true, nil
+			}
 		}
 		return false, nil
 	}
@@ -215,10 +243,54 @@ func (state *streamState) handleFrame(
 		return false, fmt.Errorf("emit Cursor event: %w", err)
 	}
 	state.doneSent = state.doneSent || event.Kind == cursorproto.EventDone
+	state.doneSeen = state.doneSeen || event.Kind == cursorproto.EventDone
 	if event.Kind == cursorproto.EventDone || event.Kind == cursorproto.EventToolCall {
+		if state.result.ToolCallSeen {
+			// Cursor can send the checkpoint for the tool after its exec request.
+			drainDelay = toolCheckpointDrain
+		}
 		state.terminal = true
 		watchdogs.stop()
-		state.drain = time.NewTimer(drainDelay)
+		if event.Kind == cursorproto.EventToolCall {
+			state.result.ToolCallSeen = true
+			state.result.ToolCallID = event.ID
+			state.result.ToolCallIDs = append(state.result.ToolCallIDs, event.ID)
+			drainDelay = toolCheckpointDrain
+		}
+		state.armDrain(drainDelay)
 	}
 	return false, nil
+}
+
+func (state *streamState) armDrain(delay time.Duration) {
+	now := time.Now()
+	if state.result.ToolCallSeen {
+		if state.drainDeadline.IsZero() {
+			state.drainDeadline = now.Add(maxToolCheckpointDrain)
+		}
+		remaining := time.Until(state.drainDeadline)
+		if remaining <= 0 {
+			remaining = time.Millisecond
+		}
+		if delay > remaining {
+			delay = remaining
+		}
+	}
+	if state.drain != nil {
+		state.drain.Stop()
+	}
+	state.drain = time.NewTimer(delay)
+}
+
+// Keep only checkpoints consistent with the complete output exposed to the client.
+func (state *streamState) finalResult() RunResult {
+	result := state.result
+	if result.ToolCallSeen {
+		if !cursorproto.MatchesPendingTools(result.Checkpoint, result.ToolCallIDs) {
+			result.Checkpoint = nil
+		}
+	} else if cursorproto.HasPendingTools(result.Checkpoint) {
+		result.Checkpoint = nil
+	}
+	return result
 }

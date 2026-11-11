@@ -1,9 +1,12 @@
 package cursorsession
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 	"time"
+
+	"cursorplugin/internal/cursorproto"
 
 	"github.com/stretchr/testify/require"
 )
@@ -29,6 +32,41 @@ func Test_Store_uses_checkpoint_when_lineage_matches(t *testing.T) {
 	checkpoint[0] = 'X'
 	_, secondHit := store.Start(key, Match{SystemDigest: "system", PrefixDigest: "prefix", CoveredMessageCount: 4})
 	require.Equal(t, []byte("opaque"), secondHit.Snapshot.CheckpointBytes())
+}
+
+func Test_Store_snapshots_blob_data_and_counts_it_against_capacity(t *testing.T) {
+	store := NewStore(Options{MaxBytes: 8})
+	key := mustKey(t, "account", "model", "session")
+	blobs := cursorproto.NewBlobStore()
+	// Cursor KV set/get messages for the one-byte blob ID "b".
+	set := []byte("\x22\x0e\x08\x01\x1a\x0a\x0a\x01b\x12\x05")
+	get := []byte("\x22\x07\x08\x01\x12\x03\x0a\x01b")
+	_, _, err := blobs.HandleServerMessage(append(set, "first"...))
+	require.NoError(t, err)
+	confirmed := fixtureConfirmed("cp")
+	confirmed.Blobs = blobs
+	token, _ := store.Start(key, fixtureMatch())
+	require.Equal(t, ReasonStored, store.Commit(token, confirmed).Reason)
+
+	_, _, err = blobs.HandleServerMessage(append(set, "later"...))
+	require.NoError(t, err)
+	_, hit := store.Start(key, fixtureMatch())
+	continuation := hit.Snapshot.BlobStore()
+	_, _, err = continuation.HandleServerMessage(append(set, "other"...))
+	require.NoError(t, err)
+	token, hit = store.Start(key, fixtureMatch())
+	reply, handled, err := hit.Snapshot.BlobStore().HandleServerMessage(get)
+	require.NoError(t, err)
+	require.True(t, handled)
+	require.True(t, bytes.Contains(reply, []byte("first")))
+
+	confirmed.Checkpoint = []byte("big")
+	require.Equal(t, ReasonOversized, store.Commit(token, confirmed).Reason)
+	other := mustKey(t, "account", "model", "other")
+	token, _ = store.Start(other, fixtureMatch())
+	require.Equal(t, 1, store.Commit(token, fixtureConfirmed("new")).Evicted)
+	_, miss := store.Start(key, fixtureMatch())
+	require.Equal(t, ReasonSessionMismatch, miss.Reason)
 }
 
 func Test_NewStore_applies_bounded_process_local_defaults(t *testing.T) {

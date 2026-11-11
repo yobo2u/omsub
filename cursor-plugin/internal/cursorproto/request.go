@@ -64,7 +64,7 @@ func EncodeRunRequest(request RunRequest) ([]byte, error) {
 }
 
 func populateRunRequest(run protoreflect.Message, request RunRequest) error {
-	state, err := conversationState(run, request)
+	state, err := conversationState(run, request.Checkpoint)
 	if err != nil {
 		return err
 	}
@@ -117,15 +117,15 @@ func validateRunRequest(request RunRequest) error {
 	return nil
 }
 
-func conversationState(run protoreflect.Message, request RunRequest) (protoreflect.Message, error) {
+func conversationState(run protoreflect.Message, checkpoint []byte) (protoreflect.Message, error) {
 	state, err := nestedMessage(run, "conversation_state")
 	if err != nil {
 		return nil, err
 	}
-	if request.Mode == FullReplay {
+	if len(checkpoint) == 0 {
 		return state, nil
 	}
-	if err := proto.Unmarshal(request.Checkpoint, state.Interface()); err != nil {
+	if err := proto.Unmarshal(checkpoint, state.Interface()); err != nil {
 		return nil, fmt.Errorf("decode Cursor conversation checkpoint: %w", err)
 	}
 	return state, nil

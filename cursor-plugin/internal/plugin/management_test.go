@@ -258,6 +258,8 @@ func Test_Handler_ManagementStatus_includes_plugin_local_estimated_usage(t *test
 	require.Contains(t, string(response.Body), `"requests":1`)
 	require.Contains(t, string(response.Body), `"succeeded":1`)
 	require.NotContains(t, string(response.Body), `"cached_tokens"`)
+	require.Contains(t, string(response.Body), `"miss_no_identity":0`)
+	require.NotContains(t, string(response.Body), `"miss_busy"`)
 }
 
 func Test_Handler_ManagementStatus_separates_plugin_outcomes_from_host_attempts_and_joins_metrics_by_auth_id(t *testing.T) {
@@ -382,6 +384,7 @@ func Test_Handler_ManagementStatus_aggregates_checkpoint_metrics_without_sensiti
 	metrics := status.Accounts[0].CheckpointMetrics
 	require.EqualValues(t, 1, metrics.Hits)
 	require.EqualValues(t, 2, metrics.Misses)
+	require.Equal(t, metrics.Misses, metrics.MissNoIdentity+metrics.MissColdStart+metrics.MissExpired+metrics.MissLineageMismatch)
 	require.EqualValues(t, 1, metrics.Invalidations)
 	require.EqualValues(t, 1, metrics.Fallbacks)
 	require.Positive(t, metrics.FullReplayBytes)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
 func Test_Checkpoint_DecodeServerEvent_captures_fixture_as_opaque_state(t *testing.T) {
@@ -120,4 +121,85 @@ func Test_Checkpoint_EncodeRunRequest_rejects_invalid_state(t *testing.T) {
 	})
 
 	require.Error(t, err)
+}
+
+func Test_MatchesPendingTool_requires_exactly_one_matching_call(t *testing.T) {
+	const call = `{"role":"assistant","content":[{"type":"tool-call","toolCallId":"raw\n1"}]}`
+	const other = `{"role":"assistant","content":[{"type":"tool-call","toolCallId":"raw\n2"}]}`
+	for _, tc := range []struct {
+		name    string
+		pending []string
+		want    bool
+	}{
+		{name: "matching", pending: []string{call}, want: true},
+		{name: "stale", pending: []string{other}},
+		{name: "multiple", pending: []string{call, other}},
+		{name: "malformed", pending: []string{"{"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			run, err := newMessage("AgentRunRequest")
+			require.NoError(t, err)
+			state, err := nestedMessage(run, "conversation_state")
+			require.NoError(t, err)
+			pending := state.Mutable(field(state, "pending_tool_calls")).List()
+			for _, message := range tc.pending {
+				pending.Append(protoreflect.ValueOfString(message))
+			}
+			checkpoint, err := proto.Marshal(state.Interface())
+			require.NoError(t, err)
+			require.Equal(t, tc.want, MatchesPendingTool(checkpoint, "raw\n1"))
+		})
+	}
+}
+
+func TestParallelCheckpointPendingTools(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		messages []string
+		ids      []string
+		want     bool
+	}{
+		{"one message", []string{`{"content":[{"type":"tool-call","toolCallId":"call_1"},{"type":"tool-call","toolCallId":"call_2"}]}`}, []string{"call_1", "call_2"}, true},
+		{"two messages", []string{`{"content":[{"type":"tool-call","toolCallId":"call_1"}]}`, `{"content":[{"type":"tool-call","toolCallId":"call_2"}]}`}, []string{"call_1", "call_2"}, true},
+		{"missing id", []string{`{"content":[{"type":"tool-call","toolCallId":"call_1"},{"type":"tool-call","toolCallId":" "}]}`}, nil, false},
+		{"empty", nil, nil, false},
+		{"malformed", []string{"{"}, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			run, err := newMessage("AgentRunRequest")
+			require.NoError(t, err)
+			state, err := nestedMessage(run, "conversation_state")
+			require.NoError(t, err)
+			pending := state.Mutable(field(state, "pending_tool_calls")).List()
+			for _, message := range tc.messages {
+				pending.Append(protoreflect.ValueOfString(message))
+			}
+			raw, err := proto.Marshal(state.Interface())
+			require.NoError(t, err)
+			ids, ok := CheckpointPendingToolCalls(raw)
+			require.Equal(t, tc.want, ok)
+			require.Equal(t, tc.ids, ids)
+			if ok {
+				require.True(t, MatchesPendingTools(raw, ids))
+				require.False(t, MatchesPendingTool(raw, ids[0]))
+				require.False(t, MatchesPendingTools(raw, []string{"call_2", "call_1"}))
+			}
+		})
+	}
+}
+
+func Test_Checkpoint_non_pending_fields_do_not_supply_pending_calls(t *testing.T) {
+	run, err := newMessage("AgentRunRequest")
+	require.NoError(t, err)
+	state, err := nestedMessage(run, "conversation_state")
+	require.NoError(t, err)
+	// Opaque state and unknown fields are not evidence of pending tool calls.
+	state.SetUnknown([]byte{0x9a, 0x06, 0x03, 'o', 'l', 'd'})
+	raw, err := proto.Marshal(state.Interface())
+	require.NoError(t, err)
+	ids, ok := CheckpointPendingToolCalls(raw)
+	require.False(t, ok)
+	require.Empty(t, ids)
+	require.False(t, MatchesPendingTool(raw, "old"))
+	require.False(t, HasPendingTools(raw))
 }

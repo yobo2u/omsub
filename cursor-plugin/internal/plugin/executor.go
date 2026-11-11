@@ -27,7 +27,7 @@ func (handler *Handler) execute(ctx context.Context, raw []byte) (any, error) {
 	if handler.cursor == nil {
 		return nil, errors.New("Cursor client is unavailable")
 	}
-	result, err := handler.runCheckpointed(ctx, request, chat, credentials, func(event cursorproto.ServerEvent) error {
+	result, err := handler.runCheckpointed(ctx, request, chat, credentials, turn, func(event cursorproto.ServerEvent) error {
 		switch event.Kind {
 		case cursorproto.EventText:
 			turn.AddText(event.Text)
@@ -76,7 +76,7 @@ func (handler *Handler) runStream(parent context.Context, request executorReques
 	defer func() {
 		handler.usage.recordTokens(request.AuthID, turn.EstimatedUsage(inputText))
 	}()
-	result, runErr := handler.runCheckpointed(ctx, request, chat, credentials, func(event cursorproto.ServerEvent) error {
+	result, runErr := handler.runCheckpointed(ctx, request, chat, credentials, turn, func(event cursorproto.ServerEvent) error {
 		switch event.Kind {
 		case cursorproto.EventText:
 			chunk, err := turn.StreamChunk(event.Text)

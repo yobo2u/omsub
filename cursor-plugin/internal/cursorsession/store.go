@@ -28,6 +28,7 @@ type generation struct {
 type entry struct {
 	key        Key
 	snapshot   Snapshot
+	bytes      int
 	lastAccess time.Time
 	element    *list.Element
 }
@@ -113,7 +114,8 @@ func (s *Store) Commit(token Token, confirmed Confirmed) Result {
 	if confirmed.ConversationID == "" || len(confirmed.Checkpoint) == 0 {
 		return Result{Reason: ReasonDecodeFailure}
 	}
-	if len(confirmed.Checkpoint) > s.maxBytes {
+	size := len(confirmed.Checkpoint) + confirmed.Blobs.ByteSize()
+	if size > s.maxBytes {
 		return Result{Reason: ReasonOversized}
 	}
 	s.remove(token.key)
@@ -121,11 +123,12 @@ func (s *Store) Commit(token Token, confirmed Confirmed) Result {
 		ConversationID: confirmed.ConversationID, CoveredMessageCount: confirmed.CoveredMessageCount,
 		SystemDigest: confirmed.SystemDigest, PrefixDigest: confirmed.PrefixDigest,
 		Generation: token.generation, checkpoint: append([]byte(nil), confirmed.Checkpoint...),
+		blobs: confirmed.Blobs.Clone(),
 	}
-	current := &entry{key: token.key, snapshot: snapshot, lastAccess: s.now()}
+	current := &entry{key: token.key, snapshot: snapshot, bytes: size, lastAccess: s.now()}
 	current.element = s.lru.PushFront(current)
 	s.entries[token.key] = current
-	s.totalBytes += len(snapshot.checkpoint)
+	s.totalBytes += current.bytes
 	evicted := 0
 	for len(s.entries) > s.maxEntries || s.totalBytes > s.maxBytes {
 		oldest := s.lru.Back()
@@ -222,7 +225,7 @@ func (s *Store) remove(key Key) {
 	}
 	delete(s.entries, key)
 	s.lru.Remove(current.element)
-	s.totalBytes -= len(current.snapshot.checkpoint)
+	s.totalBytes -= current.bytes
 }
 
 func cloneSnapshot(snapshot Snapshot) Snapshot {
